@@ -25,14 +25,11 @@ static void __conf_init(void) {
 	ipudp->conf.default_af_out = IPV4;
 }
 
-
-struct list_head * ipudp_get_viface_list(void) {
-	
+struct list_head __inline * ipudp_get_viface_list(void) {	
 	return ipudp->viface_list;
 }
 
-int ipudp_get_viface_count(void) {
-
+int __inline ipudp_get_viface_count(void) {
 	return ipudp->viface_count;
 }
 
@@ -98,20 +95,19 @@ _ipudp_list_tun_item{
 
 void 
 ipudp_list_tun_add(ipudp_dev_priv *p, ipudp_tun_params *tun) {
-	ipudp_list_tun_item *item, *q;
+	ipudp_list_tun_item *item;
 	
 	item = (ipudp_list_tun_item *)kmalloc(sizeof(*item), GFP_KERNEL);
 	memcpy(&(item->tun), tun, sizeof(*tun));
 	
 	/*XXX respesct tid order XXX*/
 	//if(list_empty(priv->list_tun.next))	
-		list_add(&(item->list), &(p->list_tun));
+	//	list_add(&(item->list), &(p->list_tun));
 	
 	//list_for_each_entry(p, &(priv->list_tun.next), list) {	
 	//}
 
 	list_add(&(item->list), &(p->list_tun));
-	//list_add_tail(&(item->list), &(p->list_tun));
 	p->tun_count++;
 }
 
@@ -146,7 +142,6 @@ ipudp_list_tsa_add(ipudp_dev_priv *p, ipudp_tsa_params *tsa) {
 	memcpy(&(item->tsa), tsa, sizeof(*tsa));
 	list_add(&(item->list), &(p->list_tsa));
 	p->tsa_count ++;
-	return;
 }
 
 void 
@@ -161,6 +156,7 @@ ipudp_list_tsa_fini(ipudp_dev_priv *priv) {
 	
 	list_for_each_entry_safe(p, q, &(priv->list_tsa), list) {
 		list_del(&(p->list));
+		sock_release(p->tsa.sock);
                 kfree(p);
 	}
 	priv->tsa_count = 0;
@@ -225,6 +221,7 @@ ipudp_tunnel_setup(struct net_device *dev)
 	
 	/*default starting MTU - it might be changed 
 	everytime we add a real interface under ipudp control*/
+	//XXX TODO cosnider ipv6 or v6 XXX
 	dev->mtu                = ETH_DATA_LEN - sizeof(struct iphdr) 
 					- sizeof(struct udphdr);
 
@@ -281,10 +278,12 @@ ipudp_del_viface(ipudp_viface_params *p) {
 
 static void 
 __ipudp_free_priv(ipudp_dev_priv * p) {
-	/*TODO*/
 	/* free tun list */
+	ipudp_list_tun_fini(p);
 	/* free tsa list */
-	/* free fw_table */
+	ipudp_list_tsa_fini(p);
+
+	/* TODO */
 	return;
 }
 
@@ -320,82 +319,191 @@ __get_new_tid(struct list_head *l) {
 */
 
 static int
-__tun_addr_is_null(int vers, __u8 *addr) {
+__tun_addr_is_null(int len, __u8 *addr) {
 	int i;
-
-	switch(vers) {
-		case IPV4:
-			if ( ((__u32)(*addr))  == 0)
-				return 1;
-			break;
-		case IPV6:
-			for (i = 0; i < IPV6_ADDR_LEN; i++) {
-				if (addr[i]) return 1;
-			}
-		break;
+	
+	for (i = 0; i < len; i++) {
+		if (addr[i] != 0) return 0;
 	}
-	return 0;
+
+	return 1;
 }
 
 static int 
 __tun_src_is_null(ipudp_tun_params *p) {
 	int vers = p->af;
 	void *addr;
+	int len;
 
-	switch(vers) {
-		case IPV4:
-			addr = &(p->u.v4p.src);
-			break;
-		case IPV6:
-			addr = p->u.v6p.src;
-			break;
-		default:
-			return -1;
-			
-	}		
-	return __tun_addr_is_null(vers, addr);  
+	if (vers == IPV4) {
+		addr = &(p->u.v4p.src);
+		len = 4;
+	}
+	else if (vers == IPV6) {
+		addr = p->u.v6p.src;
+		len = 16;
+	}
+	else //cant happen 
+		return -1;
+	
+	return __tun_addr_is_null(len, addr);  
 }
 
 static int 
 __tun_dst_is_null(ipudp_tun_params *p) {
 	int vers = p->af;
+	void *addr;
+	int len;
 
-	return 0;
+	if (vers == IPV4) {
+		addr = &(p->u.v4p.dest);
+		len = 4;
+	}
+	else if (vers == IPV6) {
+		addr = p->u.v6p.dest;
+		len = 16;
+	}
+	else //cant happen 
+		return -1;
+	
+	return __tun_addr_is_null(len, addr);
 }
 
-/*
-int __tun_reserve_port(ipudp_tun_parameters *p){
-	struct sockaddr_in addr;
-	__u16 port = p->srcport
-	int sock;
 
-	if(sock_create(AF_INET, SOCK_DGRAM, IPPROTO_UDP, &sock) < 0)
-		//
-		return -2;
+/* reserve listening port if it is given otherwise 
+pick a free port and reserve it*/
+static int 
+__tsa_reserve_port(ipudp_tun_params *p, ipudp_tsa_params *tsa){
+	struct socket *sock;
+	int err = IPUDP_OK;
+	struct net_device * dev = NULL;
+	int addr_len;
+	void *addr_ptr = NULL;
 
-	memset(&addr, 0, sizeof(struct sockaddr));
-	addr.sin_family = AF_INET;
-	addr.sin_addr.s_addr = htonl(INADDR_ANY);
-	addr.sin_port = htons(port);
-
-	if(tmp->sock->ops->bind(tmp->sock, (struct sockaddr *)&addr, sizeof(struct sockaddr)) < 0){
-		printk("reserve_port - Error - Unable to bind port %u", port);
-		kfree(tmp);
-		return -1; //TODO check the errno variable to understand the origin of the error
+	if (p->dev_idx) {
+		tsa->dev_idx = p->dev_idx;
+		dev = dev_get_by_index(&init_net, p->dev_idx);
+		if(!dev) {
+			err = IPUDP_ERR_TUN_BAD_PARAMS;
+			goto err_return;
+		}	
 	}
 
-	list_add(&tmp->list, &spl->list);
+	switch(p->af) {
+		case IPV4: {
+			struct sockaddr_in addr;
+
+			addr_ptr = &addr;
+			addr_len = sizeof(addr);
+			//XXX TODO check if tsa already in the list
+
+			memset(&addr, 0, sizeof(struct sockaddr));
+			addr.sin_family = AF_INET;
+			addr.sin_addr.s_addr = p->u.v4p.src; //XXX if 0 --> add_any
+			addr.sin_port = p->srcport;
+			
+			if (sock_create(addr.sin_family, SOCK_DGRAM, 
+						IPPROTO_UDP, &sock) < 0) {
+				err = IPUDP_ERR_TSA_SOCK_CREATE;
+				goto err_return;
+			}
+			
+			tsa->u.v4addr = p->u.v4p.src;
+			break;
+		}
+
+		case IPV6: {
+			struct sockaddr_in6 addr;	
+
+			addr_ptr = &addr;
+			addr_len = sizeof(addr);
+			//XXX TODO check if tsa already in the list
+			
+			memset(&addr, 0, sizeof(struct sockaddr_in6));
+			addr.sin6_family = AF_INET6;
+			memcpy(&addr.sin6_addr, &p->u.v6p.src, 
+				sizeof(struct in6_addr)); //XXX if all 0 --> addr_any
+			addr.sin6_port = p->srcport;
+			
+			if (sock_create(addr.sin6_family, SOCK_DGRAM, 
+						IPPROTO_UDP, &sock) < 0) {
+				err = IPUDP_ERR_TSA_SOCK_CREATE;
+				goto err_return;
+			}
+
+			memcpy(&tsa->u.v6addr, &addr.sin6_addr, 
+						sizeof(struct in6_addr));
+			break;
+		}
+		default:
+			err = IPUDP_ERR_TUN_BAD_PARAMS;
+			goto err_return;
+	}
+
+	if(sock->ops->bind(sock, (struct sockaddr *)addr_ptr, 
+				addr_len) < 0){
+		err = IPUDP_ERR_TSA_SOCK_BIND;
+		goto err_free_sock;
+	}
+
+	tsa->sock = sock;
+	tsa->af = p->af;
+	tsa->port = p->srcport; 
+
+	return IPUDP_OK;
+
+
+err_free_sock:	
+	kfree(sock);
+err_return:
+	return err;	
+}
+
+
+static int 
+__ipudp_create_and_add_tsa(ipudp_dev_priv *p, ipudp_tun_params *tun) {
+	int ret;
+	ipudp_tsa_params tsa;
+
+	memset(&tsa,0,sizeof(tsa));
+
+	if (p->tsa_count == p->max_tsa)	
+		return IPUDP_ERR_TSA_MAX;
+
+	if ((ret = __tsa_reserve_port(tun, &tsa)))
+		return ret;
+
+	ipudp_list_tsa_add(p, &tsa);
+
+#if 0	
+	printk("ipudp_create_tsa: af %d dev_idx %d port %d",
+		tsa.af, tsa.dev_idx, (int)(ntohs(tsa.port)));
+
+	if (tun->af == IPV4)
+		printk("saddr: %d.%d.%d.%d\n", NIPQUAD(tsa.u.v4addr));
+#endif
+	return IPUDP_OK;
+}
+
+
+int 
+ipudp_del_tsa(ipudp_tsa_params *tsa) {
+/*	ipudp_tsa_item *p,*q;
+	
+	for_each_entry_safe();
+	listdel(p)
+	kfree(p->sock)
+	kfree(p)
+*/	
 	return 0;
 }
-*/
+
+
 int
 ipudp_bind_tunnel(ipudp_viface_params *p, ipudp_tun_params *tun) {
 	int ret;
 	ipudp_dev *viface;
 	struct ipudp_dev_priv *priv;
-	int sock;
-	ipudp_tun_params *t;
-	ipudp_tsa_params *tsa;
 
 	viface =__list_ipudp_dev_locate_by_name(p->name);
 	if (!viface) {
@@ -421,103 +529,32 @@ ipudp_bind_tunnel(ipudp_viface_params *p, ipudp_tun_params *tun) {
 		ret = IPUDP_ERR_TUN_MAX;
 		goto err_ret;
 	}
-	if (p->mode != MODE_FIXED)
-		;//tun->tid = __get_new_tid(&(priv->list_tun));TODO
 
+	if (priv->params.mode != MODE_FIXED) {
+		//tun->tid = __get_new_tid(&(priv->list_tun));TODO
+		ret = IPUDP_ERR_TUN_BAD_PARAMS; //TODO
+		goto err_ret;
+	}
 
-	if( (!(__tun_src_is_null(tun)) && !(tun->dev_idx)) ||
-		__tun_dst_is_null(tun) || (!(tun->destport)) || (!(tun->srcport)) )
+	if(  (( __tun_src_is_null(tun)) && (!(tun->dev_idx)) )
+		|| __tun_dst_is_null(tun) || (!(tun->destport)) 
+			|| (!(tun->srcport)) )
 	{
 		ret = IPUDP_ERR_TUN_BAD_PARAMS;
 		goto err_ret;
 	}
-
-	/*XXX add tsa and bind port */
 	
+	/* reserve listening port and add tsa to list */
+	if ((ret = __ipudp_create_and_add_tsa(priv, tun))) 
+		goto err_ret;
 
-#if 0	
+	/* add tunnel to list */
+	ipudp_list_tun_add(priv, tun);
 
-void release_port(u16 port){
-	struct spl_entry *tmp;
-
-	tmp = search_port(port);
-	if(tmp != NULL){
-		tmp->n--;
-		if(tmp->n < 0) printk("\n !-WARNING-! - release_port - n with negative value");
-		if(tmp->n <= 0){
-			sock_release(tmp->sock);
-			list_del(&tmp->list);
-			kfree(tmp);
-		}
-	}
-}
-
-			tun_size = sizeof(ipudp_tun4_params);
-			
-			tsa_size = sizeof(ipudp_tsa4_params);
-			//XXX socket bind to port (random or given)
-			sock = 0;
-			//XXX TODO
-			//tsa = NULL; // kmalloc();
-			//tsa->sock = sock;
-			//__list_tsa_add(priv, t);
-		}
-			break;
-		case IPV6: 
-		{
-			ipudp_tun6_params *tun6;
-			tun6 = (ipudp_tun6_params *)t;
-
-			tun_size = sizeof(ipudp_tun6_params);
-		}
-			break;
-		default:
-			ret = IPUDP_BAD_PARAMS;
-			goto err_ret;
-			break;
-	}
-
-
-	t = kmalloc(tun_size, GFP_KERNEL);
-	memcpy(t, tun, tun_size);
-	__list_tun_add(priv, t);
-#endif
-
-	/*XXX should I check tunnel_params here?
-	Is it ok to do it in genl handler?*/
-	
-	#if 0
-	switch(p->af_out){
-		case IPV4:
-		{
-			ipudp_tun4_params *tun4 = (ipudp_tun4_params *)tun;
-			ipudp_tun4_params *t4;
-			
-			t4 = kmalloc(sizeof(*t4), GFP_KERNEL);
-			memcpy(t4, tun4, sizeof(*t4));
-			
-			__list_tun_add(priv, t4);
-		}
-		break;
-
-		case IPV6: //XXX TODO XXX
-		{
-			ret = IPUDP_BAD_PARAMS;
-			goto err_ret;
-			//ipudp_tun6_params *t4 = (ipudp_tun6_params *)tun;
-		}
-		break;
-		default:
-			//shouldn't happen
-			ret = IPUDP_BAD_PARAMS;
-			goto err_ret;
-		break; 
-	}
-	#endif
 	return IPUDP_OK;
 	
 err_ret:
-		return ret;
+	return ret;
 }
 
 int 

@@ -51,6 +51,10 @@ ipudp_ret_code{
 	IPUDP_ERR_TUN_REAL_DEV,		
 	IPUDP_ERR_TUN_BAD_PARAMS,
 	IPUDP_ERR_TUN_MAX,
+
+	IPUDP_ERR_TSA_SOCK_CREATE,	
+	IPUDP_ERR_TSA_SOCK_BIND,
+	IPUDP_ERR_TSA_MAX,
 };
 
 struct 
@@ -208,13 +212,14 @@ the listening port of the tunnel I chose to use
 sock->ops->bind(). TODO Is there another way? */ 
 typedef struct
 _ipudp_tsa_params{
-	int type;
+	int af;
+	int dev_idx;
 	union {
-		__u32 v4;
-		__u8 v6[16];
+		__u32 v4addr;
+		__u8 v6addr[16];
 	} u;
 	__u16 port;
-	int sock;
+	struct socket *sock;
 }ipudp_tsa_params;
 
 /* This struct is also the one filled and sent from userspace
