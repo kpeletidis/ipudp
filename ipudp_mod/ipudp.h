@@ -21,6 +21,7 @@
 
 #else
 #include <sys/types.h>
+#include <linux/spinlock.h>
 #include <netinet/ip.h>
 #include <netinet/ip6.h>
 #include <netinet/udp.h>
@@ -200,6 +201,13 @@ _ipudp_tun_params {
 	__u32 tid;  		//local unique id for the tunnel
 }ipudp_tun_params;
 
+typedef struct
+_ipudp_list_tun_item{
+	struct list_head list;
+	ipudp_tun_params tun;
+}ipudp_list_tun_item;
+
+
 /*A Tunnel Server Address (TSA) is the (ip addr, pair)
 pair on wich a IPUDP tunneling aware host is listening 
 for encapsulated packets. Since there could be a scenario
@@ -221,6 +229,13 @@ _ipudp_tsa_params{
 	__u16 port;
 	struct socket *sock;
 }ipudp_tsa_params;
+
+typedef struct
+_ipudp_list_tsa_item{
+	struct list_head list;
+	ipudp_tsa_params tsa;
+}ipudp_list_tsa_item;
+
 
 /* This struct is also the one filled and sent from userspace
 in a genl command referring to a virtual device*/
@@ -245,9 +260,11 @@ ipudp_dev_priv {
 	ipudp_viface_params params;
 	void * fw_table; 		//forwarding table
 	struct list_head list_tsa;	//TSA list	
+	spinlock_t tsa_lock;
 	int tsa_count;
 	int max_tsa;
 	struct list_head list_tun; 	//tunnel list
+	spinlock_t tun_lock;
 	int tun_count;
 	int max_tun;
 	/* virtual methods */
@@ -268,7 +285,8 @@ int ipudp_del_viface(ipudp_viface_params *);
 struct list_head * ipudp_get_viface_list(void);
 int ipudp_get_viface_count(void);
 
-int ipudp_bind_tunnel(ipudp_viface_params *, ipudp_tun_params *tun);
+int ipudp_bind_tunnel(ipudp_viface_params *, ipudp_tun_params *);
+ipudp_dev_priv * ipudp_get_priv(char *);
 
 /* ipudp_genl.c*/
 int ipudp_genl_register(void);
