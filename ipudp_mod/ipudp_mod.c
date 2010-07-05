@@ -97,6 +97,7 @@ __list_ipudp_dev_del(ipudp_dev * p){
 		list_del(&(p->list));
 		ipudp->viface_count --;	
 }
+
 void 
 ipudp_list_tun_add(ipudp_dev_priv *p, ipudp_tun_params *tun){ 
 		ipudp_list_tun_item *item;
@@ -172,7 +173,23 @@ ipudp_tunnel_rcv(unsigned int hooknum,
                   const struct net_device *in,
                   const struct net_device *out,
                   int (*okfn)(struct sk_buff*)) {
-	
+
+		ipudp_dev *p;
+		ipudp_dev_priv *priv;
+		ipudp_tsa_item *tsa_i;
+
+		//TODO LOCK - this is a softirq that shares data with:
+		//(1)other pck recv handler (2) packet xmit
+		//(3)netlink msg handler (4) ioctl
+		list_for_each_entry(p, ipudp->viface_list, list) {
+				priv = netdev_priv(p->dev);
+				list_for_each_entry(tsa_i, priv->list_tsa, list) {
+						/* compare local (addr,port) */
+						/* if match: priv->tun_recv();*/
+
+				}
+		}
+
 
 		//return NF_DROP;
 		return NF_ACCEPT;
@@ -184,6 +201,8 @@ ipudp_tunnel_xmit(struct sk_buff *skb, struct net_device *dev) {
 
 		p = netdev_priv(dev);
 
+
+		kfree(skb);
 		return NETDEV_TX_OK;
 }
 
