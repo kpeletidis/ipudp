@@ -73,11 +73,8 @@ __list_ipudp_dev_locate_by_name(char *name) {
 				if (!strcmp(name, p->dev->name))
 						return p;
 		}
-	
 		return NULL;
 }
-
-
 
 static void 
 __list_ipudp_dev_add(struct net_device * dev){
@@ -168,40 +165,66 @@ ipudp_tunnel_uninit(struct net_device *dev) {
 }
 
 unsigned int 
-ipudp_tunnel_rcv(unsigned int hooknum,  
+ipudp_tsa4_rcv(unsigned int hooknum,  
                   struct sk_buff *skb,
                   const struct net_device *in,
                   const struct net_device *out,
                   int (*okfn)(struct sk_buff*)) {
 
+		struct iphdr * iph;
+		struct udphdr * udph;
 		ipudp_dev *p;
 		ipudp_dev_priv *priv;
-		ipudp_tsa_item *tsa_i;
+		ipudp_list_tsa_item *tsa_i;
+		ipudp_tsa_params tsa;
+		
+		printk("ipudp: tsa4 recv\n");
+		
+		iph = (struct iphdr *)skb->data;
+		
+		if (iph->protocol != IPPROTO_UDP) goto done;	
+		udph = (struct udphdr *)(skb->data + (iph->ihl*4));
+		
+		//get ip.dest_addr and udp.dst_port 
+		tsa.u.v4addr = iph->daddr;
+		tsa.port = udph->dest;
+		printk("saddr %d.%d.%d.%d daddr %d.%d.%d.%d dport %d sport %d\n",NIPQUAD(iph->saddr),NIPQUAD(tsa.u.v4addr),ntohs(udph->dest),ntohs(udph->source));
 
 		//TODO LOCK - this is a softirq that shares data with:
 		//(1)other pck recv handler (2) packet xmit
 		//(3)netlink msg handler (4) ioctl
+		
+		// check if there is a TSA registered for this packet
 		list_for_each_entry(p, ipudp->viface_list, list) {
 				priv = netdev_priv(p->dev);
-				list_for_each_entry(tsa_i, priv->list_tsa, list) {
+				list_for_each_entry(tsa_i, &(priv->list_tsa), list) {
 						/* compare local (addr,port) */
+						printk("TSA: addr %d.%d.%d.%d port %d\n",NIPQUAD(tsa_i->tsa.u.v4addr),ntohs(tsa_i->tsa.port));
+						
 						/* if match: priv->tun_recv();*/
 
 				}
 		}
 
 
-		//return NF_DROP;
+done:
 		return NF_ACCEPT;
 }
 
 static int
 ipudp_tunnel_xmit(struct sk_buff *skb, struct net_device *dev) {
 		struct ipudp_dev_priv * p;	
+		ipudp_tun_params *tun = NULL;
 
 		p = netdev_priv(dev);
 
-
+		if (!(tun = p->fw_lookup(skb, p)))
+				goto err;
+		
+		p->tun_xmit(skb, tun);	
+	
+		//TODO dev STATISTICS;	
+err:
 		kfree(skb);
 		return NETDEV_TX_OK;
 }
@@ -251,7 +274,7 @@ static int
 ipudp_nf_init(struct nf_hook_ops *p) {
 		int err;
 
-		p->hook 	= ipudp_tunnel_rcv;
+		p->hook 	= ipudp_tsa4_rcv;
 		p->pf		= PF_INET;
 		p->hooknum	= NF_INET_PRE_ROUTING;
 		p->priority	= NF_IP_PRI_FIRST;
@@ -259,6 +282,7 @@ ipudp_nf_init(struct nf_hook_ops *p) {
 		if ((err = nf_register_hook(p)))
 				kfree(p);
 
+		//TODO register IPV4 hook
 		return err;
 }
 
@@ -304,8 +328,66 @@ __ipudp_free_priv(ipudp_dev_priv * p) {
 		return;
 }
 
+
+ipudp_tun_params * 
+ipudp_fixed_out_tun(struct sk_buff *buff, void *priv) {
+		ipudp_list_tun_item *item;
+		item = (ipudp_list_tun_item *)(((ipudp_dev_priv *)priv)->list_tun.next);
+		return (ipudp_tun_params *)&(item->tun);
+}
+
+int 
+ipudp_tun4_xmit(struct sk_buff *buf, ipudp_tun_params *tun) {
+		//TODO
+		printk("ipudp: tun4 xmit\n");
+		return 0;
+}
+
+int 
+ipudp_tun6_xmit(struct sk_buff *buf, ipudp_tun_params *tun) {
+		//TODO
+		return 0;
+}
+
+int 
+ipudp_tun4_recv(struct sk_buff *buf, void *priv) {
+		//TODO
+		printk("ipudp: tun4 recv\n");
+		return 0;
+}
+
+int 
+ipudp_tun6_recv(struct sk_buff *buf, void *priv) {
+		//TODO
+		return 0;
+}
+
 static int
 __ipudp_init_priv_data(ipudp_dev_priv *p) {
+		int ret;
+
+		switch(p->params.mode) {
+				case MODE_FIXED:
+						p->fw_table = NULL;
+						p->fw_lookup = ipudp_fixed_out_tun;
+					 	if (p->params.af_out == IPV4) {
+								p->tun_xmit = ipudp_tun4_xmit;
+								p->tun_recv = ipudp_tun4_recv;
+						}
+						else if (p->params.af_out == IPV6){
+								p->tun_xmit = ipudp_tun6_xmit;
+								p->tun_recv = ipudp_tun6_recv;
+						}
+						else {
+								ret = IPUDP_BAD_PARAMS;
+								goto done;
+						}
+						break;
+				default:
+						ret = IPUDP_BAD_PARAMS;
+						goto done;
+						break;
+		}
 		//init tun list
 		p->list_tun.prev = &p->list_tun;
 		p->list_tun.next = &p->list_tun;
@@ -317,6 +399,8 @@ __ipudp_init_priv_data(ipudp_dev_priv *p) {
 		p->max_tsa = IPUDP_CONF_MAX_TSA;
 
 		return IPUDP_OK;
+done:
+		return ret;
 }
 
 /*XXX LOCK XXX*/
@@ -586,6 +670,8 @@ ipudp_add_viface(ipudp_viface_params * p) {
 				err = IPUDP_ERR_DEV_MAX;
 				goto err_dev_alloc;
 		}
+
+		//TODO copy viface_params
 
 		if (!strlen(p->name))
 				dev = alloc_netdev(sizeof(*ipudp_priv),"ipudp%d",

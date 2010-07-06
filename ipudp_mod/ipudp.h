@@ -197,7 +197,7 @@ _ipudp_tun_params {
 	} u;
 	__u16 srcport;  	//udp src port - network byte order 
 	__u16 destport;		//udp dest port - network byte order
-	__u32 mark;		//netfilter fw mark
+	__u32 mark;			//netfilter fw mark
 	__u32 tid;  		//local unique id for the tunnel
 }ipudp_tun_params;
 
@@ -258,7 +258,7 @@ _ipudp_viface_params{
 typedef struct 
 ipudp_dev_priv {
 	ipudp_viface_params params;
-	void * fw_table; 		//forwarding table
+	void * fw_table; 			//forwarding table
 	struct list_head list_tsa;	//TSA list	
 	spinlock_t tsa_lock;
 	int tsa_count;
@@ -268,12 +268,9 @@ ipudp_dev_priv {
 	int tun_count;
 	int max_tun;
 	/* virtual methods */
-	int (*tun_xmit)(struct sk_buff *b, void *tun, int tun_len);  		
-
-	int (*tun_recv)(struct sk_buff *b, void *tun, int tun_len);
-
-	int (*fw_table_lookup)(struct sk_buff *b, void *fw_table, 
-				void *tun, int *tun_len);
+	int (*tun_xmit)(struct sk_buff *b, ipudp_tun_params *tun);
+	int (*tun_recv)(struct sk_buff *b, void *p);
+	ipudp_tun_params* (*fw_lookup)(struct sk_buff *b, void *priv);
 }ipudp_dev_priv;
 #endif
 
