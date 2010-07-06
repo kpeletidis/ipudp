@@ -182,6 +182,7 @@ _ipudp_nl_list_params{
 /* tunnel structures */
 typedef struct
 _ipudp_tun_params {
+	//TODO TUN? TAP?
 	ipudp_af_inet af;  	//ip v4 or v6. the following union
 				//depend on this value...
 	int dev_idx;		//idx of the underlying iface	
@@ -268,9 +269,10 @@ ipudp_dev_priv {
 	int tun_count;
 	int max_tun;
 	/* virtual methods */
-	int (*tun_xmit)(struct sk_buff *b, ipudp_tun_params *tun);
+	int (*tun_xmit)(struct sk_buff *b, ipudp_tun_params *tun, void *priv);
 	int (*tun_recv)(struct sk_buff *b, void *p);
 	ipudp_tun_params* (*fw_lookup)(struct sk_buff *b, void *priv);
+	void (*fw_update)(struct sk_buff *b, void *priv);
 }ipudp_dev_priv;
 #endif
 

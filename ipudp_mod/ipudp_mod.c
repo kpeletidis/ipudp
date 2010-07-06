@@ -214,7 +214,7 @@ ipudp_tunnel_xmit(struct sk_buff *skb, struct net_device *dev) {
 		if (!(tun = p->fw_lookup(skb, p)))
 				goto err;
 		
-		p->tun_xmit(skb, tun);	
+		p->tun_xmit(skb, tun, p);	
 	
 		//TODO dev STATISTICS;	
 err:
@@ -330,14 +330,14 @@ ipudp_fixed_out_tun(struct sk_buff *buff, void *priv) {
 }
 
 int 
-ipudp_tun4_xmit(struct sk_buff *buf, ipudp_tun_params *tun) {
+ipudp_tun4_xmit(struct sk_buff *buf, ipudp_tun_params *tun, void *priv) {
 		//TODO
-		printk("ipudp: tun4 xmit\n");
+		printk("ipudp: dev %s tun4 xmit\n",((ipudp_dev_priv *)priv)->params.name);
 		return 0;
 }
 
 int 
-ipudp_tun6_xmit(struct sk_buff *buf, ipudp_tun_params *tun) {
+ipudp_tun6_xmit(struct sk_buff *buf, ipudp_tun_params *tun, void *priv) {
 		//TODO
 		return 0;
 }
@@ -363,6 +363,7 @@ __ipudp_init_priv_data(ipudp_dev_priv *p) {
 				case MODE_FIXED:
 						p->fw_table = NULL;
 						p->fw_lookup = ipudp_fixed_out_tun;
+						p->fw_update = NULL;
 					 	if (p->params.af_out == IPV4) {
 								p->tun_xmit = ipudp_tun4_xmit;
 								p->tun_recv = ipudp_tun4_recv;
