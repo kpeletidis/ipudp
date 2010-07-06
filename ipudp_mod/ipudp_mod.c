@@ -165,49 +165,42 @@ ipudp_tunnel_uninit(struct net_device *dev) {
 }
 
 unsigned int 
-ipudp_tsa4_rcv(unsigned int hooknum,  
-                  struct sk_buff *skb,
-                  const struct net_device *in,
-                  const struct net_device *out,
-                  int (*okfn)(struct sk_buff*)) {
+ipudp_tsa4_rcv(unsigned int hooknum, struct sk_buff *skb, const struct net_device *in,
+						  const struct net_device *out, int (*okfn)(struct sk_buff*)) {
 
 		struct iphdr * iph;
 		struct udphdr * udph;
 		ipudp_dev *p;
 		ipudp_dev_priv *priv;
 		ipudp_list_tsa_item *tsa_i;
-		ipudp_tsa_params tsa;
 		
-		printk("ipudp: tsa4 recv\n");
-		
-		iph = (struct iphdr *)skb->data;
-		
-		if (iph->protocol != IPPROTO_UDP) goto done;	
+		iph = (struct iphdr *)skb->data;		
+		if (iph->protocol != IPPROTO_UDP) return NF_ACCEPT;
+
 		udph = (struct udphdr *)(skb->data + (iph->ihl*4));
-		
-		//get ip.dest_addr and udp.dst_port 
-		tsa.u.v4addr = iph->daddr;
-		tsa.port = udph->dest;
-		printk("saddr %d.%d.%d.%d daddr %d.%d.%d.%d dport %d sport %d\n",NIPQUAD(iph->saddr),NIPQUAD(tsa.u.v4addr),ntohs(udph->dest),ntohs(udph->source));
+	
+#if 0	
+		printk("saddr %d.%d.%d.%d daddr %d.%d.%d.%d dport %d sport %d\n",
+				NIPQUAD(iph->saddr),NIPQUAD(iph->daddr),
+				ntohs(udph->dest),ntohs(udph->source));
+#endif	
 
 		//TODO LOCK - this is a softirq that shares data with:
 		//(1)other pck recv handler (2) packet xmit
 		//(3)netlink msg handler (4) ioctl
-		
 		// check if there is a TSA registered for this packet
 		list_for_each_entry(p, ipudp->viface_list, list) {
 				priv = netdev_priv(p->dev);
 				list_for_each_entry(tsa_i, &(priv->list_tsa), list) {
-						/* compare local (addr,port) */
-						printk("TSA: addr %d.%d.%d.%d port %d\n",NIPQUAD(tsa_i->tsa.u.v4addr),ntohs(tsa_i->tsa.port));
-						
-						/* if match: priv->tun_recv();*/
+						if ((tsa_i->tsa.u.v4addr == iph->daddr) && 
+										(tsa_i->tsa.port == udph->dest)) {
 
+								priv->tun_recv(skb, priv);
+								return NF_DROP;
+						}
 				}
 		}
 
-
-done:
 		return NF_ACCEPT;
 }
 
@@ -547,7 +540,8 @@ __tsa_reserve_port(ipudp_tun_params *p, ipudp_tsa_params *tsa){
 		}
 		//XXX TODO check if the bind failed because already bound
 		//by another tunnel - should be enough to check if the TSA
-		//is already in the list (above)
+		//is already in the list (above). if TSA is already bound 
+		//for the same iface, no problem. 
 	
 		tsa->sock = sock;
 		tsa->af = p->af;

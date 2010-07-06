@@ -221,15 +221,7 @@ main(int argc, char **argv){
 				}
 				memcpy(viface_params.name, viface_name, strlen(viface_name));
 
-				if (!dev_name) {
-					printf("Error: a device name must be indicated to add tunnel\n");
-					usage_tun();	
-				}
-				if ((iface_idx = get_iface_idx_by_name(dev_name))<1) {
-					printf("Error: dev %s not found or you must be root\n", dev_name);
-					usage_tun();	
-				}	
-				tun_params.dev_idx = iface_idx;
+	
 				
 				if (!ip_vers) {
 					printf("Error: tun ip version must be specified\n");
@@ -255,7 +247,20 @@ main(int argc, char **argv){
 					}
 				}
 
-				//parse tun  source address
+				if ((!src_addr) && (!dev_name)) {
+					printf("Error: a real device name must be indicated to add tunnel when src address missing\n");
+					usage_tun();	
+				}
+
+				if (dev_name) {
+					if((iface_idx = get_iface_idx_by_name(dev_name))<1) {
+						printf("Error: dev %s not found or you must be root\n", dev_name);
+						usage_tun();	
+					}
+					tun_params.dev_idx = iface_idx;
+				}
+
+			//parse tun  source address
 				if (dest_addr) {
 					if (ip_vers == IPV4){	
 						if (inet_pton(AF_INET, dest_addr, daddr_bin) <= 0) {
