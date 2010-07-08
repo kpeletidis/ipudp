@@ -21,10 +21,10 @@
 #include <net/route.h>
 #include <net/ip.h>
 #include <net/xfrm.h>
+#include <linux/spinlock.h>
 
 #else
 #include <sys/types.h>
-#include <linux/spinlock.h>
 #include <netinet/ip.h>
 #include <netinet/ip6.h>
 #include <netinet/udp.h>
@@ -279,7 +279,6 @@ ipudp_dev_priv {
 	ipudp_tun_params* (*fw_lookup)(struct sk_buff *b, void *p);
 	void (*fw_update)(struct sk_buff *b, void *p);
 }ipudp_dev_priv;
-#endif
 
 /* function prototypes */
 /* ipuudp_mod.c */
@@ -295,6 +294,6 @@ ipudp_dev_priv * ipudp_get_priv(char *);
 /* ipudp_genl.c*/
 int ipudp_genl_register(void);
 void ipudp_genl_unregister(void);
-
+#endif
 
 #endif
