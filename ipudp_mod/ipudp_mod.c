@@ -160,8 +160,10 @@ ipudp_list_tsa_fini(ipudp_dev_priv *priv) {
 
 static void 
 ipudp_tunnel_uninit(struct net_device *dev) {
-		/*TODO*/
-		printk(KERN_INFO "TODO ipudp_tunnel_uninit\n");
+		/*TODO move del iface here */
+		ipudp_dev_priv *priv = netdev_priv(dev);
+		printk("uninit dev %s\n", priv->params.name);
+		//ipudp_del_viface(&(priv->params));
 }
 
 unsigned int 
@@ -208,17 +210,19 @@ static int
 ipudp_tunnel_xmit(struct sk_buff *skb, struct net_device *dev) {
 		struct ipudp_dev_priv * p;	
 		ipudp_tun_params *tun = NULL;
+		int err;
 
 		p = netdev_priv(dev);
 
 		if (!(tun = p->fw_lookup(skb, p)))
-				goto err;
+				goto done;
 		
-		p->tun_xmit(skb, tun, p);	
+		if (!(err = p->tun_xmit(skb, tun, p)))
+				goto done;	
 	
 		//TODO dev STATISTICS;	
-err:
 		kfree(skb);
+done:
 		return NETDEV_TX_OK;
 }
 
@@ -275,7 +279,7 @@ ipudp_nf_init(struct nf_hook_ops *p) {
 		if ((err = nf_register_hook(p)))
 				kfree(p);
 
-		//TODO register IPV4 hook
+		//TODO register IPV6 hook
 		return err;
 }
 
@@ -310,6 +314,7 @@ ipudp_del_viface(ipudp_viface_params *p) {
 		return IPUDP_OK;
 }
 
+//TODO
 static void 
 __ipudp_free_priv(ipudp_dev_priv * p) {
 		/* free tun list */
@@ -325,15 +330,133 @@ __ipudp_free_priv(ipudp_dev_priv * p) {
 ipudp_tun_params * 
 ipudp_fixed_out_tun(struct sk_buff *buff, void *priv) {
 		ipudp_list_tun_item *item;
+		//printk("looking for out tun for dev %s\n",((ipudp_dev_priv *)priv)->params.name);
+
+		//if (list_empty(&((ipudp_dev_priv *)priv)->list_tun))
+		if ( ((ipudp_dev_priv *)priv)->tun_count == 0)
+				return NULL;
+
 		item = (ipudp_list_tun_item *)(((ipudp_dev_priv *)priv)->list_tun.next);
 		return (ipudp_tun_params *)&(item->tun);
 }
 
+__u16 __udp_cheksum(void *hdr) {
+		__wsum	csum;
+		struct iphdr *ip = (struct iphdr *)hdr;
+		struct udphdr *udp = (struct udphdr *)(hdr + 20);
+
+		csum = csum_partial(udp, udp->len, 0);
+		return csum_tcpudp_magic(ip->saddr, ip->daddr, udp->len, IPPROTO_UDP, csum);
+}
+
 int 
-ipudp_tun4_xmit(struct sk_buff *buf, ipudp_tun_params *tun, void *priv) {
-		//TODO
+ipudp_tun4_xmit(struct sk_buff *skb, ipudp_tun_params *tun, void *priv) {
+		
+#if 0
 		printk("ipudp: dev %s tun4 xmit\n",((ipudp_dev_priv *)priv)->params.name);
-		return 0;
+		printk("ipudp: outgoing tunnel: \n");
+		if (tun->af == IPV4) {
+				printk("daddr: %d.%d.%d.%d", NIPQUAD(tun->u.v4p.dest));
+				printk("daddr: %d.%d.%d.%d", NIPQUAD(tun->u.v4p.src));
+		}
+		printk("sport: %d ", (int)ntohs(tun->srcport));
+		printk("dport: %d \n", (int)ntohs(tun->destport));
+#endif
+		struct iphdr *iph_in =(struct iphdr *) skb->data;
+		struct iphdr *iph;
+		struct udphdr *udph;
+		struct sk_buff *new_skb; 
+		struct rtable *rt;
+
+		//XXX check if 
+		struct flowi fl = {
+				.oif = tun->dev_idx,
+				.nl_u = {
+						.ip4_u = {
+								.daddr 	= tun->u.v4p.dest,
+								.saddr 	= tun->u.v4p.src,
+								.tos 	= RT_TOS(iph_in->tos)
+						}
+				},
+				.proto 	= IPPROTO_IP
+		};
+
+		struct net_device *dev = dev_get_by_index(&init_net, tun->dev_idx);
+
+		if (ip_route_output_key(dev_net(dev), &rt, &fl)) {
+				printk("ipudp: ip_route_output_key error\n");
+				return -1;
+		}
+
+		if (skb_headroom(skb) < IPUDP4_HDR_LEN || skb_shared(skb) || (skb_cloned(skb) && !skb_clone_writable(skb, 0))) {
+				new_skb = skb_realloc_headroom(skb, IPUDP4_HDR_LEN);
+				if (!new_skb) {
+						/*TODO
+						ip_rt_put(rt);
+						stats->tx_dropped++;
+						dev_kfree_skb(skb);
+						return NETDEV_TX_OK;
+						printk("\n\t can not realloc skb room");*/
+						return -1;
+				}
+
+				if (skb->sk) 
+						skb_set_owner_w(new_skb, skb->sk);
+
+				dev_kfree_skb(skb);
+				skb = new_skb;
+				iph_in = ip_hdr(skb);
+		}
+
+		skb_push(skb, IPUDP4_HDR_LEN);
+		skb_reset_network_header(skb);
+
+		memset(&(IPCB(skb)->opt), 0, sizeof(IPCB(skb)->opt));
+		//XXX check
+		IPCB(skb)->flags &= ~(IPSKB_XFRM_TUNNEL_SIZE | IPSKB_XFRM_TRANSFORMED | IPSKB_REROUTED);
+		skb_dst_drop(skb);
+		skb_dst_set(skb, &rt->u.dst);
+	
+		//push ipudp tunnel header
+		{	
+
+				//IP
+ 				iph				= (struct iphdr *)skb->data;
+				iph->version	= 4;
+				iph->ihl		= sizeof(struct iphdr)>>2;
+				iph->frag_off 	= htons(IP_DF); //XXX
+				iph->protocol	= IPPROTO_UDP;
+				iph->tos		= 0;
+				iph->saddr		= rt->rt_src;
+				iph->daddr 		= rt->rt_dst;
+				iph->tot_len 	= htons(ntohs(iph_in->tot_len) + IPUDP4_HDR_LEN);
+				iph->ttl		= iph_in->ttl;
+				iph->check 		= 0;
+				//UDP
+				udph 			= (struct udphdr *)(skb->data + 20);
+				udph->source	= tun->srcport;
+				udph->dest		= tun->destport;
+				udph->len 		= htons(ntohs(iph_in->tot_len) + 8);
+				udph->check		= 0;
+
+				ip_select_ident(ip_hdr(skb), &rt->u.dst, NULL);
+				skb->ip_summed = CHECKSUM_NONE; //it will be computed later on
+				udph->check = __udp_cheksum(iph);
+		}
+
+		nf_reset(skb);
+
+		//XXX check
+
+		skb->mark = tun->mark;
+#if 0
+		printk("ipudp: outgoing packet\n");
+		printk("daddr: %d.%d.%d.%d", NIPQUAD(tun->u.v4p.dest));
+				printk("daddr: %d.%d.%d.%d", NIPQUAD(tun->u.v4p.src));
+		printk("sport: %d ", (int)ntohs(tun->srcport));
+		printk("dport: %d \n", (int)ntohs(tun->destport));
+#endif
+		return ip_local_out(skb);
 }
 
 int 
@@ -345,7 +468,7 @@ ipudp_tun6_xmit(struct sk_buff *buf, ipudp_tun_params *tun, void *priv) {
 int 
 ipudp_tun4_recv(struct sk_buff *buf, void *priv) {
 		//TODO
-		printk("ipudp: tun4 recv\n");
+		//printk("ipudp: tun4 recv for dev %s\n",((ipudp_dev_priv *)priv)->params.name);
 		return 0;
 }
 
@@ -634,7 +757,7 @@ ipudp_bind_tunnel(ipudp_viface_params *p, ipudp_tun_params *tun) {
 				goto err_ret;
 		}
 	
-		if(  (( __tun_src_is_null(tun)) && (!(tun->dev_idx)) )
+		if(  (( __tun_src_is_null(tun)) && (!(tun->dev_idx)))
 				|| __tun_dst_is_null(tun) || (!(tun->destport)) 
 											|| (!(tun->srcport)) )
 		{

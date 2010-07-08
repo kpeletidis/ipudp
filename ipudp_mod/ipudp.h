@@ -18,6 +18,8 @@
 #include <linux/etherdevice.h>
 #include <linux/list.h>
 #include <linux/types.h>
+#include <net/route.h>
+#include <net/ip.h>
 
 #else
 #include <sys/types.h>
@@ -59,13 +61,15 @@ ipudp_ret_code{
 };
 
 struct 
-ipudp_hdr_v4 {
+ipudp4hdr {
 	struct iphdr ip;
 	struct udphdr udp;
 };
 
+#define IPUDP4_HDR_LEN 20 + 8
+
 struct 
-ipudp_hdr_v6 {
+ipudp6hdr {
 #ifndef USERSPACE
 	struct ipv6hdr ip6;
 #else
