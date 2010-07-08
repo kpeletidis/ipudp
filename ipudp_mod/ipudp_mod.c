@@ -198,12 +198,13 @@ ipudp_tsa4_rcv(unsigned int hooknum, struct sk_buff *skb, const struct net_devic
 										(tsa_i->tsa.port == udph->dest)) {
 
 								priv->tun_recv(skb, p->dev);
-								break;
+								goto done;
 						}
 				}
 		}
 
-		return NF_DROP;
+done:
+		return NF_ACCEPT;
 }
 
 static int
@@ -264,7 +265,7 @@ ipudp_tunnel_setup(struct net_device *dev)
 		dev->flags              = IFF_NOARP;
 		dev->iflink             = 0;
 		dev->addr_len           = 4;
-		//dev->features           |= 0/*TODO*/;
+		dev->features           |= NETIF_F_NETNS_LOCAL;
 }
 
 static int 
@@ -459,7 +460,9 @@ ipudp_tun4_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 				printk("daddr: %d.%d.%d.%d", NIPQUAD(tun->u.v4p.src));
 		printk("sport: %d ", (int)ntohs(tun->srcport));
 		printk("dport: %d \n", (int)ntohs(tun->destport));
-#endif
+#endif		
+		dev->stats.tx_packets++;
+		dev->stats.tx_bytes += skb->len;
 		return ip_local_out(skb);
 }
 
@@ -473,13 +476,10 @@ int
 ipudp_tun4_recv(struct sk_buff *skb, struct net_device *dev) {
 		//printk("ipudp: tun4 recv for dev %s\n",((ipudp_dev_priv *)priv)->params.name);
 	
-		secpath_reset(skb);	 //XXX
+		//secpath_reset(skb);	 //XXX
 		//TODO ip udp checksum
-	
 		skb_pull(skb, IPUDP4_HDR_LEN);
 		skb_reset_network_header(skb);
-		skb->protocol = htons(ETH_P_IP);
-		skb->pkt_type = PACKET_HOST;
 
 		dev->stats.rx_packets++;
 		dev->stats.rx_bytes += skb->len;
@@ -487,7 +487,7 @@ ipudp_tun4_recv(struct sk_buff *skb, struct net_device *dev) {
 		skb_dst_drop(skb);
 		nf_reset(skb);
 		//ipip_ecn_decapsulate(iph, skb);
-		netif_rx(skb);		
+		//netif_rx(skb);		
 
 		return 0;
 }
