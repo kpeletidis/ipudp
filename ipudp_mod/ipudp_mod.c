@@ -217,7 +217,7 @@ ipudp_tunnel_xmit(struct sk_buff *skb, struct net_device *dev) {
 		if (!(tun = p->fw_lookup(skb, p)))
 				goto done;
 		
-		if (!(err = p->tun_xmit(skb, tun, p)))
+		if (!(err = p->tun_xmit(skb, tun, dev)))
 				goto done;	
 	
 		//TODO dev STATISTICS;	
@@ -350,10 +350,10 @@ __u16 __udp_cheksum(void *hdr) {
 }
 
 int 
-ipudp_tun4_xmit(struct sk_buff *skb, ipudp_tun_params *tun, void *priv) {
+ipudp_tun4_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *dev) {
 		
 #if 0
-		printk("ipudp: dev %s tun4 xmit\n",((ipudp_dev_priv *)priv)->params.name);
+		printk("ipudp: dev tun4 xmit\n");
 		printk("ipudp: outgoing tunnel: \n");
 		if (tun->af == IPV4) {
 				printk("daddr: %d.%d.%d.%d", NIPQUAD(tun->u.v4p.dest));
@@ -361,6 +361,7 @@ ipudp_tun4_xmit(struct sk_buff *skb, ipudp_tun_params *tun, void *priv) {
 		}
 		printk("sport: %d ", (int)ntohs(tun->srcport));
 		printk("dport: %d \n", (int)ntohs(tun->destport));
+
 #endif
 		struct iphdr *iph_in =(struct iphdr *) skb->data;
 		struct iphdr *iph;
@@ -368,27 +369,31 @@ ipudp_tun4_xmit(struct sk_buff *skb, ipudp_tun_params *tun, void *priv) {
 		struct sk_buff *new_skb; 
 		struct rtable *rt;
 
-		//XXX check if 
-		struct flowi fl = {
-				.oif = tun->dev_idx,
-				.nl_u = {
-						.ip4_u = {
-								.daddr 	= tun->u.v4p.dest,
-								.saddr 	= tun->u.v4p.src,
-								.tos 	= RT_TOS(iph_in->tos)
-						}
-				},
-				.proto 	= IPPROTO_IP
-		};
-
-		struct net_device *dev = dev_get_by_index(&init_net, tun->dev_idx);
-
-		if (ip_route_output_key(dev_net(dev), &rt, &fl)) {
-				printk("ipudp: ip_route_output_key error\n");
+		if (skb->protocol != htons(ETH_P_IP))
 				return -1;
+
+		//XXX check if
+		{	
+				struct flowi fl = {
+						.oif = tun->dev_idx,
+						.nl_u = {
+								.ip4_u = {
+										.daddr 	= tun->u.v4p.dest,
+										.saddr 	= tun->u.v4p.src,
+										.tos 	= RT_TOS(iph_in->tos)
+								}
+						},
+						.proto 	= IPPROTO_IP
+				};
+
+				if (ip_route_output_key(dev_net(dev), &rt, &fl)) {
+						printk("ipudp: ip_route_output_key error\n");
+						return -1;
+				}
 		}
 
-		if (skb_headroom(skb) < IPUDP4_HDR_LEN || skb_shared(skb) || (skb_cloned(skb) && !skb_clone_writable(skb, 0))) {
+		if (skb_headroom(skb) < IPUDP4_HDR_LEN || skb_shared(skb) || 
+						(skb_cloned(skb) && !skb_clone_writable(skb, 0))) {
 				new_skb = skb_realloc_headroom(skb, IPUDP4_HDR_LEN);
 				if (!new_skb) {
 						/*TODO
@@ -419,7 +424,6 @@ ipudp_tun4_xmit(struct sk_buff *skb, ipudp_tun_params *tun, void *priv) {
 	
 		//push ipudp tunnel header
 		{	
-
 				//IP
  				iph				= (struct iphdr *)skb->data;
 				iph->version	= 4;
@@ -445,9 +449,6 @@ ipudp_tun4_xmit(struct sk_buff *skb, ipudp_tun_params *tun, void *priv) {
 		}
 
 		nf_reset(skb);
-
-		//XXX check
-
 		skb->mark = tun->mark;
 #if 0
 		printk("ipudp: outgoing packet\n");
@@ -460,7 +461,7 @@ ipudp_tun4_xmit(struct sk_buff *skb, ipudp_tun_params *tun, void *priv) {
 }
 
 int 
-ipudp_tun6_xmit(struct sk_buff *buf, ipudp_tun_params *tun, void *priv) {
+ipudp_tun6_xmit(struct sk_buff *buf, ipudp_tun_params *tun, struct net_device *dev) {
 		//TODO
 		return 0;
 }
