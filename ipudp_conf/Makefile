@@ -1,7 +1,7 @@
 RM = rm
 CC = gcc
 
-IPDUP_KERNEL_DIR = ../../svn_personal/ipudp_module/
+IPDUP_KERNEL_DIR = ../ipudp_mod/
 PROG = ipudp_conf
 OBJS = ipudp_conf.o ipudp_genl.o ipudp_util.o
  
