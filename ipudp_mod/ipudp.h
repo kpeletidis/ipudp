@@ -20,6 +20,7 @@
 #include <linux/types.h>
 #include <net/route.h>
 #include <net/ip.h>
+#include <net/xfrm.h>
 
 #else
 #include <sys/types.h>
@@ -274,9 +275,9 @@ ipudp_dev_priv {
 	int max_tun;
 	/* virtual methods */
 	int (*tun_xmit)(struct sk_buff *b, ipudp_tun_params *tun, struct net_device *dev);
-	int (*tun_recv)(struct sk_buff *b, void *p);
-	ipudp_tun_params* (*fw_lookup)(struct sk_buff *b, void *priv);
-	void (*fw_update)(struct sk_buff *b, void *priv);
+	int (*tun_recv)(struct sk_buff *b, struct net_device *d);
+	ipudp_tun_params* (*fw_lookup)(struct sk_buff *b, void *p);
+	void (*fw_update)(struct sk_buff *b, void *p);
 }ipudp_dev_priv;
 #endif
 

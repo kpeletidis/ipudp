@@ -197,13 +197,13 @@ ipudp_tsa4_rcv(unsigned int hooknum, struct sk_buff *skb, const struct net_devic
 						if ((tsa_i->tsa.u.v4addr == iph->daddr) && 
 										(tsa_i->tsa.port == udph->dest)) {
 
-								priv->tun_recv(skb, priv);
-								return NF_DROP;
+								priv->tun_recv(skb, p->dev);
+								break;
 						}
 				}
 		}
 
-		return NF_ACCEPT;
+		return NF_DROP;
 }
 
 static int
@@ -392,6 +392,9 @@ ipudp_tun4_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 				}
 		}
 
+		if (rt->u.dst.dev == dev)
+				return -1;
+
 		if (skb_headroom(skb) < IPUDP4_HDR_LEN || skb_shared(skb) || 
 						(skb_cloned(skb) && !skb_clone_writable(skb, 0))) {
 				new_skb = skb_realloc_headroom(skb, IPUDP4_HDR_LEN);
@@ -467,14 +470,30 @@ ipudp_tun6_xmit(struct sk_buff *buf, ipudp_tun_params *tun, struct net_device *d
 }
 
 int 
-ipudp_tun4_recv(struct sk_buff *buf, void *priv) {
-		//TODO
+ipudp_tun4_recv(struct sk_buff *skb, struct net_device *dev) {
 		//printk("ipudp: tun4 recv for dev %s\n",((ipudp_dev_priv *)priv)->params.name);
+	
+		secpath_reset(skb);	 //XXX
+		//TODO ip udp checksum
+	
+		skb_pull(skb, IPUDP4_HDR_LEN);
+		skb_reset_network_header(skb);
+		skb->protocol = htons(ETH_P_IP);
+		skb->pkt_type = PACKET_HOST;
+
+		dev->stats.rx_packets++;
+		dev->stats.rx_bytes += skb->len;
+		skb->dev = dev;
+		skb_dst_drop(skb);
+		nf_reset(skb);
+		//ipip_ecn_decapsulate(iph, skb);
+		netif_rx(skb);		
+
 		return 0;
 }
 
 int 
-ipudp_tun6_recv(struct sk_buff *buf, void *priv) {
+ipudp_tun6_recv(struct sk_buff *buf, struct net_device *dev) {
 		//TODO
 		return 0;
 }
