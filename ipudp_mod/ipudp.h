@@ -275,7 +275,7 @@ ipudp_dev_priv {
 	int max_tun;
 	/* virtual methods */
 	void (*tun_xmit)(struct sk_buff *b, ipudp_tun_params *tun, struct net_device *dev);
-	int (*tun_recv)(struct sk_buff *b, struct net_device *d);
+	void (*tun_recv)(struct sk_buff *b, struct net_device *d);
 	ipudp_tun_params* (*fw_lookup)(struct sk_buff *b, void *p);
 	void (*fw_update)(struct sk_buff *b, void *p);
 }ipudp_dev_priv;

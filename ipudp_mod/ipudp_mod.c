@@ -180,12 +180,6 @@ ipudp_tsa4_rcv(unsigned int hooknum, struct sk_buff *skb, const struct net_devic
 		if (iph->protocol != IPPROTO_UDP) return NF_ACCEPT;
 
 		udph = (struct udphdr *)(skb->data + (iph->ihl*4));
-	
-#if 0	
-		printk("saddr %d.%d.%d.%d daddr %d.%d.%d.%d dport %d sport %d\n",
-				NIPQUAD(iph->saddr),NIPQUAD(iph->daddr),
-				ntohs(udph->dest),ntohs(udph->source));
-#endif	
 
 		//TODO LOCK - this is a softirq that shares data with:
 		//(1)other pck recv handler (2) packet xmit
@@ -333,7 +327,6 @@ ipudp_fixed_out_tun(struct sk_buff *buff, void *priv) {
 		ipudp_list_tun_item *item;
 		//printk("looking for out tun for dev %s\n",((ipudp_dev_priv *)priv)->params.name);
 
-		//if (list_empty(&((ipudp_dev_priv *)priv)->list_tun))
 		if ( ((ipudp_dev_priv *)priv)->tun_count == 0)
 				return NULL;
 
@@ -360,7 +353,6 @@ ipudp_tun4_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 		}
 		printk("sport: %d ", (int)ntohs(tun->srcport));
 		printk("dport: %d \n", (int)ntohs(tun->destport));
-
 #endif
 		struct iphdr *iph_in =(struct iphdr *) skb->data;
 		struct iphdr *iph;
@@ -379,9 +371,6 @@ ipudp_tun4_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 				goto tx_error;
 		}
 
-
-		//TODO dev STATISTICS;
-		//XXX check if
 		{	
 				struct flowi fl = {
 						.oif = tun->dev_idx,
@@ -475,7 +464,7 @@ ipudp_tun4_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 		err = ip_local_out(skb);
 
 		if (likely(net_xmit_eval(err) == 0)) {
-				txq->tx_bytes += skb->len - IPUDP4_HDR_LEN;
+				txq->tx_bytes += skb->len;
 				txq->tx_packets++;
 		} else {
 				stats->tx_errors++;
@@ -495,27 +484,22 @@ ipudp_tun6_xmit(struct sk_buff *buf, ipudp_tun_params *tun, struct net_device *d
 		return;
 }
 
-int 
+void
 ipudp_tun4_recv(struct sk_buff *skb, struct net_device *dev) {
-		//printk("ipudp: tun4 recv for dev %s\n",((ipudp_dev_priv *)priv)->params.name);
-	
-		//secpath_reset(skb);	 //XXX
-		//TODO ip udp checksum
+		secpath_reset(skb);
+		dev->stats.rx_packets++;
+		dev->stats.rx_bytes += skb->len;
 		skb_pull(skb, IPUDP4_HDR_LEN);
 		skb_reset_network_header(skb);
 
-		dev->stats.rx_packets++;
-		dev->stats.rx_bytes += skb->len;
 		skb->dev = dev;
 		skb_dst_drop(skb);
 		nf_reset(skb);
 		//ipip_ecn_decapsulate(iph, skb);
 		//netif_rx(skb);		
-
-		return 0;
 }
 
-int 
+void
 ipudp_tun6_recv(struct sk_buff *buf, struct net_device *dev) {
 		//TODO
 		return 0;
