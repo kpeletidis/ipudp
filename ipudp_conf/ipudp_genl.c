@@ -391,8 +391,8 @@ int do_cmd_list(char *viface_name, ipudp_nl_cmd_spec cmd_spec) {
 	memset(&p,0,sizeof(p));
 
 	//TODO iface idx from name
-	//if (viface_name) 
-	//	p.viface_idx = get_iface_idx_by_name(viface_name);
+	if (viface_name) 
+		memcpy(&p.dev_name,viface_name, strlen(viface_name));
 
 	/* fill the header */
 	req.n.nlmsg_len 	= NLMSG_LENGTH(GENL_HDRLEN);
@@ -452,7 +452,7 @@ do_cmd_add_tun(ipudp_viface_params *v, ipudp_tun_params *p){
 	req.n.nlmsg_flags 	= NLM_F_REQUEST;
 	req.n.nlmsg_seq 	= 0;
 	req.n.nlmsg_pid 	= getpid();
-	req.g.cmd 		= IPUDP_C_ADD;
+	req.g.cmd 			= IPUDP_C_ADD;
 
 
 	/* first attribute - cmd specification: TUN */

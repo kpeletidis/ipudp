@@ -8,12 +8,12 @@
 #include "ipudp_conf.h"
 #include <ipudp.h>
 
-
+//TODO use ipudp_nl_cmd_spec
 typedef enum 
 _cmd_add_type {
 	VIFACE = 1,
-	TSA,
 	TUN,
+	TSA,
 	RULE,
 }cmd_add_type;
 
@@ -116,7 +116,12 @@ main(int argc, char **argv){
 				else usage_list();
 				break;	
 			case 'N':
-				viface_name = optarg;
+				viface_name = optarg;	
+				if ((strlen(viface_name) > MAX_IPUDP_DEV_NAME_LEN)){
+					printf("viface name too long\n");
+					exit(-1);
+				}	
+
 				break;		
 			case 'U':
 				dev_name = optarg;
@@ -170,8 +175,7 @@ main(int argc, char **argv){
 		printf("ipudp_genl_client_init error\n");
 		exit(-1);
 	}
-
-
+		
 	switch (cmd) {
 		case IPUDP_C_ADD:
 			if (cmd_attr == RULE)
@@ -185,10 +189,7 @@ main(int argc, char **argv){
 				memset(&p,0,sizeof(p));
 	
 				if (viface_name) { 
-					if ((strlen(viface_name) > MAX_IPUDP_DEV_NAME_LEN)){
-						printf("viface name too long\n");
-						usage_dev();
-					}
+
 					memset(p.name,0, MAX_IPUDP_DEV_NAME_LEN);
 					memcpy(p.name, viface_name, strlen(viface_name));
 				}
@@ -215,10 +216,7 @@ main(int argc, char **argv){
 					printf("Error: a viface must be specified\n");
 					usage_tun();	
 				}
-				if ((strlen(viface_name) > MAX_IPUDP_DEV_NAME_LEN)){
-					printf("Error: viface name too long\n");
-					usage_tun();	
-				}
+
 				memcpy(viface_params.name, viface_name, strlen(viface_name));
 
 	
@@ -338,6 +336,14 @@ main(int argc, char **argv){
 			break;
 
 		case IPUDP_C_LIST:
+
+			if (cmd_attr != VIFACE) {
+					if (!viface_name){
+					printf("ipudp viface name must be specified\n");
+					usage_list();
+				}
+			}
+
 			if (do_cmd_list(viface_name, cmd_attr) != 0)
 					printf("Error getting list of type %d\n", cmd_attr);
 			break;	

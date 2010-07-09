@@ -320,18 +320,7 @@ ipudp_genl_do_list(struct sk_buff *skb, struct genl_info *info){
 				{
 						ipudp_list_tun_item *t;
 						ipudp_dev_priv *priv = NULL;
-						ipudp_viface_params *p =  NULL;
-	
-						p = (ipudp_viface_params *)extract_nl_attr(info, IPUDP_A_VIFACE_PARAMS);
-						if (!p)	{		
-								ret_code = IPUDP_BAD_PARAMS;	
-								attr = kmalloc(sizeof(*attr), GFP_KERNEL);
-								set_msg_attr(&attr[n_attr], IPUDP_A_RET_CODE, &ret_code, 
-											sizeof(ret_code), 0, &n_attr);
-								goto done;
-						}
-
-						priv = ipudp_get_priv(p->name);
+						priv = ipudp_get_priv(list_params->dev_name);
 					
 						if (!priv) {
 								ret_code = IPUDP_ERR_DEV_NOT_FOUND;	
@@ -340,6 +329,8 @@ ipudp_genl_do_list(struct sk_buff *skb, struct genl_info *info){
 										sizeof(ret_code), 0, &n_attr);
 								goto done;
 						}
+					
+							
 						listp = &(priv->list_tun);
 						list_params->n_items = priv->tun_count;
 	
@@ -349,28 +340,32 @@ ipudp_genl_do_list(struct sk_buff *skb, struct genl_info *info){
 						set_msg_attr(&attr[n_attr], IPUDP_A_RET_CODE, 
 								&ret_code, sizeof(ret_code), 0, &n_attr);
 						set_msg_attr(&attr[n_attr], IPUDP_A_LIST_PARAMS, 
-								list_params, sizeof(*list_params), 0, &n_attr);
-
-			
+								list_params, sizeof(*list_params), 0, &n_attr);	
+						
+							
 						list_for_each_entry(t, listp, list) {
-								set_msg_attr(&attr[n_attr], IPUDP_A_VIFACE_PARAMS, &(t->tun), 
+								set_msg_attr(&attr[n_attr], IPUDP_A_TUN_PARAMS, &(t->tun), 
 													sizeof(t->tun), 0, &n_attr);
 						}
 		
 						break;
 				}
 
-				case CMD_S_TSA:{
-						break;
+				case CMD_S_TSA:
+				{
+						//TODO
 				}
-				case CMD_S_RULE: //TODO	
-						//break;
-				default:
+				case CMD_S_RULE:
+				{ 
+						//TODO	
+				}	
+				default: {
 						ret_code = IPUDP_BAD_CMD_SPEC;
 						attr = kmalloc(sizeof(*attr), GFP_KERNEL);
 						set_msg_attr(&attr[n_attr], IPUDP_A_RET_CODE, 
 								&ret_code, sizeof(ret_code), 0, &n_attr);
 						break;
+				}
 		}
 
 done:

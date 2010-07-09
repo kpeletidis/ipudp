@@ -15,6 +15,9 @@ static ipudp_data *ipudp;
 static int __ipudp_init_priv_data(ipudp_dev_priv *);
 static void  __ipudp_free_priv(ipudp_dev_priv *);
 static ipudp_dev * __list_ipudp_dev_locate_by_name(char *); 
+void ipudp_list_tsa_flush(ipudp_dev_priv *);
+void ipudp_list_tun_flush(ipudp_dev_priv *);
+
 
 static const char banner[] __initconst =
 		KERN_INFO "Tunneling - IP over IP/UDP - module\n";
@@ -120,7 +123,7 @@ ipudp_list_tun_del(ipudp_dev_priv *p, ipudp_tun_params *tun) {
 }
 
 void
-ipudp_list_tun_fini(ipudp_dev_priv *priv) {
+ipudp_list_tun_flush(ipudp_dev_priv *priv) {
 		ipudp_list_tun_item *p,*q;
 	
 		list_for_each_entry_safe(p, q, &(priv->list_tun), list) {
@@ -146,7 +149,7 @@ ipudp_list_tsa_del(ipudp_dev_priv *p, ipudp_tsa_params *tsa) {
 }
 
 void 
-ipudp_list_tsa_fini(ipudp_dev_priv *priv) {
+ipudp_list_tsa_flush(ipudp_dev_priv *priv) {
 		ipudp_list_tsa_item *p,*q;
 	
 		list_for_each_entry_safe(p, q, &(priv->list_tsa), list) {
@@ -313,9 +316,9 @@ ipudp_del_viface(ipudp_viface_params *p) {
 static void 
 __ipudp_free_priv(ipudp_dev_priv * p) {
 		/* free tun list */
-		ipudp_list_tun_fini(p);
+		ipudp_list_tun_flush(p);
 		/* free tsa list */
-		ipudp_list_tsa_fini(p);
+		ipudp_list_tsa_flush(p);
 
 		/* TODO */
 		return;
@@ -502,7 +505,7 @@ ipudp_tun4_recv(struct sk_buff *skb, struct net_device *dev) {
 void
 ipudp_tun6_recv(struct sk_buff *buf, struct net_device *dev) {
 		//TODO
-		return 0;
+		return;
 }
 
 static int
@@ -760,19 +763,6 @@ ipudp_bind_tunnel(ipudp_viface_params *p, ipudp_tun_params *tun) {
 		}
 		priv = (ipudp_dev_priv *)netdev_priv(viface->dev);
 
-#if 0
-		printk("ipudp_bind_tunnel:p->name %s tun->type %d mode %d",
-					p->name, tun->af, priv->params.mode);
-
-		if (tun->af == IPV4) {
-				printk("daddr: %d.%d.%d.%d", NIPQUAD(tun->u.v4p.dest));
-				printk("daddr: %d.%d.%d.%d", NIPQUAD(tun->u.v4p.src));
-		}
-		printk("sport: %d ", (int)ntohs(tun->srcport));
-		printk("dport: %d ", (int)ntohs(tun->destport));
-		printk("iface idx %d\n", (int)tun->dev_idx);
-#endif
-
 		if (priv->tun_count == priv->max_tun) {	
 				ret = IPUDP_ERR_TUN_MAX;
 				goto err_ret;
@@ -792,6 +782,11 @@ ipudp_bind_tunnel(ipudp_viface_params *p, ipudp_tun_params *tun) {
 				goto err_ret;
 		}
 	
+		if (priv->params.mode == MODE_FIXED){
+				ipudp_list_tsa_flush(priv);
+				ipudp_list_tun_flush(priv);
+		}
+
 		/* reserve listening port and add tsa to list */
 		if ((ret = __ipudp_create_and_add_tsa(priv, tun))) 
 				goto err_ret;

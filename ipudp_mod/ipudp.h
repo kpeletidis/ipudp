@@ -101,7 +101,8 @@ _ipudp_af_inet {
 	IPV4 = 1,
 	IPV6,
 }ipudp_af_inet;
- 
+
+/*TODO only fixed and multi and add a fw_policy_mode?*/
 typedef enum
 _ipudp_viface_mode {
 	MODE_FIXED = 1,
@@ -170,7 +171,7 @@ IPUDP_GNL_COMMANDS{
 struct for IPUDP_C_LIST command */
 typedef struct
 _ipudp_nl_list_params{
-	int viface_idx; //viface the list is referring to
+	char dev_name[MAX_IPUDP_DEV_NAME_LEN + 1];
 	int n_items;
 }ipudp_nl_list_params;
 
