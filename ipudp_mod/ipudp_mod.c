@@ -211,18 +211,18 @@ static int
 ipudp_tunnel_xmit(struct sk_buff *skb, struct net_device *dev) {
 		struct ipudp_dev_priv * p;	
 		ipudp_tun_params *tun = NULL;
-		int err;
 
 		p = netdev_priv(dev);
 
-		if (!(tun = p->fw_lookup(skb, p)))
+		if (!(tun = p->fw_lookup(skb, p))) {
+				dev_kfree_skb(skb);
+				dev->stats.tx_dropped++;
+				dev->stats.tx_errors++;
 				goto done;
-		
-		if (!(err = p->tun_xmit(skb, tun, dev)))
-				goto done;	
+		}
+
+		p->tun_xmit(skb, tun, dev);
 	
-		//TODO dev STATISTICS;	
-		kfree(skb);
 done:
 		return NETDEV_TX_OK;
 }
@@ -341,16 +341,14 @@ ipudp_fixed_out_tun(struct sk_buff *buff, void *priv) {
 		return (ipudp_tun_params *)&(item->tun);
 }
 
-__u16 __udp_cheksum(void *hdr) {
-		__wsum	csum;
-		struct iphdr *ip = (struct iphdr *)hdr;
-		struct udphdr *udp = (struct udphdr *)(hdr + 20);
+__u16 __udp_cheksum(struct iphdr *iph, struct udphdr *udph) {
+	__wsum	csum;
 
-		csum = csum_partial(udp, udp->len, 0);
-		return csum_tcpudp_magic(ip->saddr, ip->daddr, udp->len, IPPROTO_UDP, csum);
+	csum = csum_partial(udph, ntohs(udph->len), 0);
+	return csum_tcpudp_magic(iph->saddr, iph->daddr, ntohs(udph->len), IPPROTO_UDP, csum);
 }
 
-int 
+void
 ipudp_tun4_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *dev) {
 		
 #if 0
@@ -369,10 +367,20 @@ ipudp_tun4_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 		struct udphdr *udph;
 		struct sk_buff *new_skb; 
 		struct rtable *rt;
+		struct netdev_queue *txq = netdev_get_tx_queue(dev, 0);
+		struct net_device_stats *stats = &dev->stats;
+		int err;
 
 		if (skb->protocol != htons(ETH_P_IP))
-				return -1;
+				goto tx_error;
 
+		if (skb->len > dev->mtu) {
+				stats->tx_dropped++;
+				goto tx_error;
+		}
+
+
+		//TODO dev STATISTICS;
 		//XXX check if
 		{	
 				struct flowi fl = {
@@ -388,25 +396,24 @@ ipudp_tun4_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 				};
 
 				if (ip_route_output_key(dev_net(dev), &rt, &fl)) {
-						printk("ipudp: ip_route_output_key error\n");
-						return -1;
+						stats->tx_carrier_errors++;
+						goto tx_error;
 				}
 		}
 
-		if (rt->u.dst.dev == dev)
-				return -1;
+		if (rt->u.dst.dev == dev) {
+				stats->collisions++;
+				ip_rt_put(rt);
+				goto tx_error;
+		}
 
-		if (skb_headroom(skb) < IPUDP4_HDR_LEN || skb_shared(skb) || 
-						(skb_cloned(skb) && !skb_clone_writable(skb, 0))) {
+		if (skb_headroom(skb) < LL_RESERVED_SPACE(rt->u.dst.dev) + IPUDP4_HDR_LEN 
+						|| skb_shared(skb) || (skb_cloned(skb) && !skb_clone_writable(skb, 0))) {
 				new_skb = skb_realloc_headroom(skb, IPUDP4_HDR_LEN);
 				if (!new_skb) {
-						/*TODO
-						ip_rt_put(rt);
 						stats->tx_dropped++;
-						dev_kfree_skb(skb);
-						return NETDEV_TX_OK;
-						printk("\n\t can not realloc skb room");*/
-						return -1;
+						ip_rt_put(rt);
+						goto tx_error;
 				}
 
 				if (skb->sk) 
@@ -427,7 +434,8 @@ ipudp_tun4_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 		skb_dst_set(skb, &rt->u.dst);
 	
 		//push ipudp tunnel header
-		{	
+		{
+				__u16 cs;	
 				//IP
  				iph				= (struct iphdr *)skb->data;
 				iph->version	= 4;
@@ -449,7 +457,8 @@ ipudp_tun4_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 
 				ip_select_ident(ip_hdr(skb), &rt->u.dst, NULL);
 				skb->ip_summed = CHECKSUM_NONE; //it will be computed later on
-				udph->check = __udp_cheksum(iph);
+				cs = __udp_cheksum(iph, udph);
+				udph->check = cs;
 		}
 
 		nf_reset(skb);
@@ -463,13 +472,27 @@ ipudp_tun4_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 #endif		
 		dev->stats.tx_packets++;
 		dev->stats.tx_bytes += skb->len;
-		return ip_local_out(skb);
+		err = ip_local_out(skb);
+
+		if (likely(net_xmit_eval(err) == 0)) {
+				txq->tx_bytes += skb->len - IPUDP4_HDR_LEN;
+				txq->tx_packets++;
+		} else {
+				stats->tx_errors++;
+				stats->tx_aborted_errors++;
+		}
+
+		return;		
+
+tx_error:
+		stats->tx_errors++;
+		dev_kfree_skb(skb);
 }
 
-int 
+void 
 ipudp_tun6_xmit(struct sk_buff *buf, ipudp_tun_params *tun, struct net_device *dev) {
-		//TODO
-		return 0;
+		//TODo
+		return;
 }
 
 int 
