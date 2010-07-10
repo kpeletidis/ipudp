@@ -200,8 +200,9 @@ ipudp_tsa4_rcv(unsigned int hooknum, struct sk_buff *skb, const struct net_devic
 				}
 		}
 
-done:
 		return NF_ACCEPT;
+done:
+		return NF_DROP;
 }
 
 static int
@@ -424,7 +425,7 @@ ipudp_tun4_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 		IPCB(skb)->flags &= ~(IPSKB_XFRM_TUNNEL_SIZE | IPSKB_XFRM_TRANSFORMED | IPSKB_REROUTED);
 		skb_dst_drop(skb);
 		skb_dst_set(skb, &rt->u.dst);
-	
+
 		//push ipudp tunnel header
 		{
 				__u16 cs;	
@@ -489,6 +490,11 @@ ipudp_tun6_xmit(struct sk_buff *buf, ipudp_tun_params *tun, struct net_device *d
 
 void
 ipudp_tun4_recv(struct sk_buff *skb, struct net_device *dev) {
+			
+		/* IP UDP CHECKSUM verification */
+
+#if 0
+		/* continue NETFILET HOOK */
 		secpath_reset(skb);
 		dev->stats.rx_packets++;
 		dev->stats.rx_bytes += skb->len;
@@ -498,8 +504,26 @@ ipudp_tun4_recv(struct sk_buff *skb, struct net_device *dev) {
 		skb->dev = dev;
 		skb_dst_drop(skb);
 		nf_reset(skb);
-		//ipip_ecn_decapsulate(iph, skb);
-		//netif_rx(skb);		
+#endif
+		struct sk_buff *new_skb = skb_clone(skb, GFP_ATOMIC);
+	
+		secpath_reset(new_skb);
+		//new_skb->mac_header = new_skb->network_header;
+		skb_pull(new_skb, IPUDP4_HDR_LEN);
+		//skb_reset_network_header(new_skb);
+		new_skb->protocol = htons(ETH_P_IP);
+		new_skb->pkt_type = PACKET_HOST;
+	
+		/* Reschedule NET_RX softirq */
+		dev->stats.rx_packets++;
+		dev->stats.rx_bytes += new_skb->len;
+	
+		new_skb->dev = dev;
+		skb_dst_drop(new_skb);
+		nf_reset(new_skb);
+		netif_rx(new_skb);
+
+		printk("rescheduled\n");
 }
 
 void
