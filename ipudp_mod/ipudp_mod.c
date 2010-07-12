@@ -72,10 +72,14 @@ static ipudp_dev *
 __list_ipudp_dev_locate_by_name(char *name) {
 		ipudp_dev * p;
 
-		list_for_each_entry(p, ipudp->viface_list, list) {
-				if (!strcmp(name, p->dev->name))
+		//rcu_read_lock();
+		list_for_each_entry/*_rcu*/(p, ipudp->viface_list, list) {
+				if (!strcmp(name, p->dev->name)) {
+						//rcu_read_unlock();
 						return p;
+				}
 		}
+		//rcu_read_unlock();
 		return NULL;
 }
 
@@ -184,21 +188,20 @@ ipudp_tsa4_rcv(unsigned int hooknum, struct sk_buff *skb, const struct net_devic
 
 		udph = (struct udphdr *)(skb->data + (iph->ihl*4));
 
-		//TODO LOCK - this is a softirq that shares data with:
-		//(1)other pck recv handler (2) packet xmit
-		//(3)netlink msg handler (4) ioctl
-		// check if there is a TSA registered for this packet
-		list_for_each_entry(p, ipudp->viface_list, list) {
+		//rcu_read_lock();
+		list_for_each_entry/*_rcu*/(p, ipudp->viface_list, list) {
 				priv = netdev_priv(p->dev);
-				list_for_each_entry(tsa_i, &(priv->list_tsa), list) {
+				list_for_each_entry/*_rcu*/(tsa_i, &(priv->list_tsa), list) {
 						if ((tsa_i->tsa.u.v4addr == iph->daddr) && 
 										(tsa_i->tsa.port == udph->dest)) {
 
 								priv->tun_recv(skb, p->dev);
+								//rcu_read_unlock();
 								goto done;
 						}
 				}
 		}
+		//rcu_read_unlock();
 
 		return NF_ACCEPT;
 done:
@@ -212,6 +215,7 @@ ipudp_tunnel_xmit(struct sk_buff *skb, struct net_device *dev) {
 
 		p = netdev_priv(dev);
 
+		//rcu_read_lock();
 		if (!(tun = p->fw_lookup(skb, p))) {
 				dev_kfree_skb(skb);
 				dev->stats.tx_dropped++;
@@ -220,7 +224,8 @@ ipudp_tunnel_xmit(struct sk_buff *skb, struct net_device *dev) {
 		}
 
 		p->tun_xmit(skb, tun, dev);
-	
+
+		//rcu_read_unlock();	
 done:
 		return NETDEV_TX_OK;
 }
@@ -291,6 +296,13 @@ new_dev_not_allowed(void) {
 
 int  
 ipudp_del_viface(ipudp_viface_params *p) {	
+
+/*TODO this function calls 
+		unregister_netdev(viface->dev);	
+	and all the stuff below goes into
+	ipudp_tunnel_uninit;
+*/
+
 		static ipudp_dev * viface; 
 		ipudp_dev_priv *priv;	
 				

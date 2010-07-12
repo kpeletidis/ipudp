@@ -81,7 +81,7 @@ ipudp6hdr {
 
 struct 
 ipudp_conf {
-	int max_dev_num;
+	int max_dev_num; //XXX in 2 places
 	int default_mode;
 	int default_af_out;
 };
@@ -89,9 +89,12 @@ ipudp_conf {
 /* module common struct */
 typedef struct 
 _ipudp_data {
-	struct list_head * viface_list;
+	struct list_head * viface_list; //TODO not needed
+	//struct list_head tsa4_list;
+	//struct list_head tsa6_list;
 	int viface_count;
 	struct nf_hook_ops *nf_hook_ops_in;
+	//struct nf_hook_ops nf_hook_ops_6_in;
 	struct ipudp_conf conf;
 	int max_dev_num;
 } ipudp_data;
@@ -228,7 +231,8 @@ sock->ops->bind(). TODO Is there another way? */
 typedef struct
 _ipudp_tsa_params{
 	int af;
-	int dev_idx;
+	//struct net_device *viface;  //virtual iface to which the TSA is bound
+	int dev_idx;  //underlying iface
 	union {
 		__u32 v4addr;
 		__u8 v6addr[16];
@@ -244,8 +248,6 @@ _ipudp_list_tsa_item{
 }ipudp_list_tsa_item;
 
 
-/* This struct is also the one filled and sent from userspace
-in a genl command referring to a virtual device*/
 typedef struct 
 _ipudp_dev {	
 	/* list pointer */
@@ -254,6 +256,8 @@ _ipudp_dev {
 	struct net_device *dev; 
 } ipudp_dev;
 
+/* This struct is also the one filled and sent from userspace
+in a genl command referring to a virtual device*/
 typedef struct
 _ipudp_viface_params{
 	char name[MAX_IPUDP_DEV_NAME_LEN + 1]; //TODO remove it?
