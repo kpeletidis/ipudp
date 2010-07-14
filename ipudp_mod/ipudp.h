@@ -94,7 +94,7 @@ _ipudp_data {
 	//struct list_head tsa6_list;
 	int viface_count;
 	struct nf_hook_ops *nf_hook_ops_in;
-	//struct nf_hook_ops nf_hook_ops_6_in;
+	struct nf_hook_ops *nf_hook_ops_6_in;
 	struct ipudp_conf conf;
 	int max_dev_num;
 } ipudp_data;
@@ -271,7 +271,6 @@ ipudp_dev_priv {
 	ipudp_viface_params params;
 	void * fw_table; 			//forwarding table
 	struct list_head list_tsa;	//TSA list	
-	spinlock_t tsa_lock;
 	int tsa_count;
 	int max_tsa;
 	struct list_head list_tun; 	//tunnel list

@@ -10,11 +10,12 @@
 #include "ipudp.h"
 
 LIST_HEAD(ipudp_viface_list);
+static DEFINE_SPINLOCK(ipudp_lock);
+
 
 static ipudp_data *ipudp;
 static int __ipudp_init_priv_data(ipudp_dev_priv *);
-static void  __ipudp_free_priv(ipudp_dev_priv *);
-static ipudp_dev * __list_ipudp_dev_locate_by_name(char *); 
+static void  ipudp_clean_priv(ipudp_dev_priv *);
 void ipudp_list_tsa_flush(ipudp_dev_priv *);
 void ipudp_list_tun_flush(ipudp_dev_priv *);
 
@@ -39,12 +40,16 @@ int __inline ipudp_get_viface_count(void) {
 ipudp_dev_priv * 
 ipudp_get_priv(char *name) {
 		ipudp_dev * p;
-		p = __list_ipudp_dev_locate_by_name(name);
+		struct net_device *d;
+		list_for_each_entry_rcu(p, ipudp->viface_list, list) {
+				if (!strcmp(name, p->dev->name)) {
+						d = p->dev;
+						return netdev_priv(d);
+				}
+		}
 
-		if (p)
-				return netdev_priv(p->dev);
-		else 
-				return NULL;
+		return NULL;
+
 }
 
 static void 
@@ -53,33 +58,17 @@ __list_ipudp_dev_init(void) {
 		ipudp->viface_count = 0;
 }
 
-static void 
-__list_ipudp_dev_fini(void) {
-		ipudp_dev *p,*q;
-		ipudp_dev_priv *priv;
-	
-		list_for_each_entry_safe(p, q, ipudp->viface_list, list) {
-				priv = netdev_priv(p->dev);
-				__ipudp_free_priv(priv);	
-				list_del(&(p->list));
-				unregister_netdev(p->dev);
-				kfree(p);
-		}
-		ipudp->viface_count = 0;
-}
 
 static ipudp_dev * 
 __list_ipudp_dev_locate_by_name(char *name) {
 		ipudp_dev * p;
 
-		//rcu_read_lock();
-		list_for_each_entry/*_rcu*/(p, ipudp->viface_list, list) {
+		list_for_each_entry_rcu(p, ipudp->viface_list, list) {
 				if (!strcmp(name, p->dev->name)) {
-						//rcu_read_unlock();
+						rcu_read_unlock();
 						return p;
 				}
 		}
-		//rcu_read_unlock();
 		return NULL;
 }
 
@@ -89,17 +78,10 @@ __list_ipudp_dev_add(struct net_device * dev){
 
 		p = kzalloc(sizeof(ipudp_dev), GFP_KERNEL);
 		p->dev = dev;
-
-		list_add(&(p->list), ipudp->viface_list);
+		spin_lock(&ipudp_lock);
+		list_add_rcu(&(p->list), ipudp->viface_list);
+		spin_unlock(&ipudp_lock);
 		ipudp->viface_count ++;	
-}
-
-static void 
-__list_ipudp_dev_del(ipudp_dev * p){	
-		ipudp_dev_priv *priv = netdev_priv(p->dev);
-		__ipudp_free_priv(priv);
-		list_del(&(p->list));
-		ipudp->viface_count --;	
 }
 
 void 
@@ -166,12 +148,53 @@ ipudp_list_tsa_flush(ipudp_dev_priv *priv) {
 }
 
 static void 
-ipudp_tunnel_uninit(struct net_device *dev) {
-		/*TODO move del iface here */
-		ipudp_dev_priv *priv = netdev_priv(dev);
-		printk("uninit dev %s\n", priv->params.name);
-		//ipudp_del_viface(&(priv->params));
+ipudp_tunnel_uninit(struct net_device *dev) {			
+		static ipudp_dev * viface; 
+
+		viface = __list_ipudp_dev_locate_by_name(dev->name);
+		ipudp_dev_priv *priv = netdev_priv(dev);					
+								
+		list_del(&(viface->list));
+											
+		ipudp_clean_priv(priv);
+
+		kfree(viface);
+
 }
+
+static void 
+__list_ipudp_dev_fini(void) {
+		ipudp_dev *p,*q;
+	
+		list_for_each_entry_safe(p, q, ipudp->viface_list, list) {
+				//priv = netdev_priv(p->dev);
+				//ipudp_clean_priv(priv);	
+				unregister_netdev(p->dev);
+				//list_del(&(p->list));
+		}
+}
+
+int 
+ipudp_del_viface(ipudp_viface_params *p) {					
+		static ipudp_dev * viface; 
+
+		viface = __list_ipudp_dev_locate_by_name(p->name);
+						
+		if (!viface)
+				return IPUDP_ERR_DEV_NOT_FOUND;
+
+
+		unregister_netdev(viface->dev);
+		return IPUDP_OK;
+}
+
+unsigned int 
+ipudp_tsa6_rcv(unsigned int hooknum, struct sk_buff *skb, const struct net_device *in,
+						  const struct net_device *out, int (*okfn)(struct sk_buff*)) {
+		/*TODO*/
+		return NF_ACCEPT;
+}
+
 
 unsigned int 
 ipudp_tsa4_rcv(unsigned int hooknum, struct sk_buff *skb, const struct net_device *in,
@@ -188,20 +211,20 @@ ipudp_tsa4_rcv(unsigned int hooknum, struct sk_buff *skb, const struct net_devic
 
 		udph = (struct udphdr *)(skb->data + (iph->ihl*4));
 
-		//rcu_read_lock();
-		list_for_each_entry/*_rcu*/(p, ipudp->viface_list, list) {
+		rcu_read_lock();
+		list_for_each_entry_rcu(p, ipudp->viface_list, list) {
 				priv = netdev_priv(p->dev);
-				list_for_each_entry/*_rcu*/(tsa_i, &(priv->list_tsa), list) {
+				list_for_each_entry_rcu(tsa_i, &(priv->list_tsa), list) {
 						if ((tsa_i->tsa.u.v4addr == iph->daddr) && 
 										(tsa_i->tsa.port == udph->dest)) {
 
 								priv->tun_recv(skb, p->dev);
-								//rcu_read_unlock();
+								rcu_read_unlock();
 								goto done;
 						}
 				}
 		}
-		//rcu_read_unlock();
+		rcu_read_unlock();
 
 		return NF_ACCEPT;
 done:
@@ -213,9 +236,10 @@ ipudp_tunnel_xmit(struct sk_buff *skb, struct net_device *dev) {
 		struct ipudp_dev_priv * p;	
 		ipudp_tun_params *tun = NULL;
 
+		rcu_read_lock();
+		
 		p = netdev_priv(dev);
 
-		//rcu_read_lock();
 		if (!(tun = p->fw_lookup(skb, p))) {
 				dev_kfree_skb(skb);
 				dev->stats.tx_dropped++;
@@ -225,7 +249,7 @@ ipudp_tunnel_xmit(struct sk_buff *skb, struct net_device *dev) {
 
 		p->tun_xmit(skb, tun, dev);
 
-		//rcu_read_unlock();	
+		rcu_read_unlock();	
 done:
 		return NETDEV_TX_OK;
 }
@@ -283,6 +307,21 @@ ipudp_nf_init(struct nf_hook_ops *p) {
 		if ((err = nf_register_hook(p)))
 				kfree(p);
 
+		return err;
+}
+
+static int 
+ipudp_nf6_init(struct nf_hook_ops *p) {
+		int err;
+
+		p->hook 	= ipudp_tsa6_rcv;
+		p->pf		= PF_INET6;
+		p->hooknum	= NF_INET_PRE_ROUTING;
+		p->priority	= NF_IP_PRI_FIRST;
+        
+		if ((err = nf_register_hook(p)))
+				kfree(p);
+
 		//TODO register IPV6 hook
 		return err;
 }
@@ -294,40 +333,8 @@ new_dev_not_allowed(void) {
 		return -1;
 }
 
-int  
-ipudp_del_viface(ipudp_viface_params *p) {	
-
-/*TODO this function calls 
-		unregister_netdev(viface->dev);	
-	and all the stuff below goes into
-	ipudp_tunnel_uninit;
-*/
-
-		static ipudp_dev * viface; 
-		ipudp_dev_priv *priv;	
-				
-		viface = __list_ipudp_dev_locate_by_name(p->name);
-			
-		if (!viface)
-				return IPUDP_ERR_DEV_NOT_FOUND;
-
-		priv = netdev_priv(viface->dev);
-			
-		memcpy(p, &(priv->params), sizeof(*p));
-			
-		__list_ipudp_dev_del(viface);
-		unregister_netdev(viface->dev);		
-			
-		__ipudp_free_priv(priv);
-
-		kfree(viface);
-
-		return IPUDP_OK;
-}
-
-//TODO
 static void 
-__ipudp_free_priv(ipudp_dev_priv * p) {
+ipudp_clean_priv(ipudp_dev_priv * p) {
 		/* free tun list */
 		ipudp_list_tun_flush(p);
 		/* free tsa list */
@@ -337,16 +344,17 @@ __ipudp_free_priv(ipudp_dev_priv * p) {
 		return;
 }
 
-
 ipudp_tun_params * 
 ipudp_fixed_out_tun(struct sk_buff *buff, void *priv) {
 		ipudp_list_tun_item *item;
-		//printk("looking for out tun for dev %s\n",((ipudp_dev_priv *)priv)->params.name);
+		struct list_head l;
 
-		if ( ((ipudp_dev_priv *)priv)->tun_count == 0)
+		if ( ((ipudp_dev_priv *)priv)->tun_count == 0 )
 				return NULL;
 
-		item = (ipudp_list_tun_item *)(((ipudp_dev_priv *)priv)->list_tun.next);
+		l = ((ipudp_dev_priv *)priv)->list_tun ;
+		item = (ipudp_list_tun_item *)rcu_dereference(l.next);
+
 		return (ipudp_tun_params *)&(item->tun);
 }
 
@@ -506,7 +514,7 @@ ipudp_tun4_recv(struct sk_buff *skb, struct net_device *dev) {
 		/* IP UDP CHECKSUM verification */
 
 #if 0
-		/* continue NETFILET HOOK */
+		/* continue NETFILTER HOOK */
 		secpath_reset(skb);
 		dev->stats.rx_packets++;
 		dev->stats.rx_bytes += skb->len;
@@ -517,6 +525,7 @@ ipudp_tun4_recv(struct sk_buff *skb, struct net_device *dev) {
 		skb_dst_drop(skb);
 		nf_reset(skb);
 #endif
+
 		struct sk_buff *new_skb = skb_clone(skb, GFP_ATOMIC);
 	
 		secpath_reset(new_skb);
@@ -534,8 +543,6 @@ ipudp_tun4_recv(struct sk_buff *skb, struct net_device *dev) {
 		skb_dst_drop(new_skb);
 		nf_reset(new_skb);
 		netif_rx(new_skb);
-
-		printk("rescheduled\n");
 }
 
 void
@@ -586,7 +593,6 @@ done:
 		return ret;
 }
 
-/*XXX LOCK XXX*/
 /*
 static int
 __get_new_tid(struct list_head *l) {
@@ -627,7 +633,7 @@ __tun_src_is_null(ipudp_tun_params *p) {
 				addr = p->u.v6p.src;
 				len = 16;
 		}
-		else //cant happen 
+		else //can't happen 
 		return -1;
 
 		return __tun_addr_is_null(len, addr);  
@@ -652,7 +658,6 @@ __tun_dst_is_null(ipudp_tun_params *p) {
 	
 		return __tun_addr_is_null(len, addr);
 }
-
 
 /* reserve listening port if it is given otherwise 
 pick a free port and reserve it*/
@@ -739,7 +744,6 @@ __tsa_reserve_port(ipudp_tun_params *p, ipudp_tsa_params *tsa){
 
 		return IPUDP_OK;
 
-
 err_free_sock:	
 		kfree(sock);
 err_return:
@@ -772,7 +776,6 @@ __ipudp_create_and_add_tsa(ipudp_dev_priv *p, ipudp_tun_params *tun) {
 		return IPUDP_OK;
 }
 
-
 int 
 ipudp_del_tsa(ipudp_tsa_params *tsa) {
 	/*	ipudp_tsa_item *p,*q;
@@ -784,7 +787,6 @@ ipudp_del_tsa(ipudp_tsa_params *tsa) {
 	*/	
 		return 0;
 }
-
 
 int
 ipudp_bind_tunnel(ipudp_viface_params *p, ipudp_tun_params *tun) {
@@ -851,14 +853,10 @@ ipudp_add_viface(ipudp_viface_params * p) {
 
 		if (!strlen(p->name))
 				dev = alloc_netdev(sizeof(*ipudp_priv),"ipudp%d",
-								ipudp_tunnel_setup);
-		else	{
-				//printk("Adding %s\n", p->name);
+										ipudp_tunnel_setup);
+		else	
 				dev = alloc_netdev(sizeof(*ipudp_priv),p->name,
 										ipudp_tunnel_setup);
-				//err = IPUDP_ERR_DEV_NAME;
-				//goto err_dev_alloc;
-		}
 
 		if (!dev) {
 				err = IPUDP_ERR_DEV_ALLOC;
@@ -885,7 +883,6 @@ ipudp_add_viface(ipudp_viface_params * p) {
 		//copy ipudp private dev data
 		memcpy(&ipudp_priv->params, p, sizeof(*p));
 	
-		/* TODO write the function */
 		err = __ipudp_init_priv_data(ipudp_priv);
 		if (err)
 				goto err_init_priv;	
@@ -896,6 +893,8 @@ ipudp_add_viface(ipudp_viface_params * p) {
 				goto err_reg_dev;
 		}
 
+		//add dev to internal list 
+		////XXX maybe useless
 		__list_ipudp_dev_add(dev); 
 
 		return IPUDP_OK;
@@ -903,7 +902,7 @@ ipudp_add_viface(ipudp_viface_params * p) {
 err_reg_dev:
 		free_netdev(dev);
 err_init_priv:
-		__ipudp_free_priv(ipudp_priv);
+		ipudp_clean_priv(ipudp_priv);
 err_alloc_name:
 err_dev_alloc:
 		return err;
@@ -912,7 +911,7 @@ err_dev_alloc:
 
 static int __init ipudp_init(void) {
 		int err = 0;
-		struct nf_hook_ops *p;
+		struct nf_hook_ops *p, *q;
 
 		printk(banner);
 
@@ -924,19 +923,26 @@ static int __init ipudp_init(void) {
 		if ((err = ipudp_genl_register())) 
 				goto err_genl_register;
 
+		//IPv4 hook
 		p = kzalloc(sizeof(struct nf_hook_ops), GFP_KERNEL);
-
 		if ((err = ipudp_nf_init(p)))
 				goto err_nf_hook;
 
 		ipudp->nf_hook_ops_in = p;
+		
+		//IPv6 hook
+		q = kzalloc(sizeof(struct nf_hook_ops), GFP_KERNEL);
+		if ((err = ipudp_nf6_init(q)))
+				goto err_nf6_hook;
 
+		ipudp->nf_hook_ops_6_in = q;
 		return 0;
 
+err_nf6_hook:
+		kfree(q);
 err_nf_hook:
 		kfree(p);
 err_genl_register:
-//err_ipudp_dev_alloc:
 		kfree(ipudp);
 		return err;
 }
