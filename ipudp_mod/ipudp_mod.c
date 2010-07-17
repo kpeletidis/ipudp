@@ -65,7 +65,6 @@ __list_ipudp_dev_locate_by_name(char *name) {
 
 		list_for_each_entry_rcu(p, ipudp->viface_list, list) {
 				if (!strcmp(name, p->dev->name)) {
-						rcu_read_unlock();
 						return p;
 				}
 		}
@@ -78,27 +77,31 @@ __list_dev_add(struct net_device * dev){
 
 		p = kzalloc(sizeof(ipudp_dev), GFP_KERNEL);
 		p->dev = dev;
-		spin_lock_bh(&ipudp_lock);
+		spin_lock_bh(&ipudp_lock);	
 		list_add_rcu(&(p->list), ipudp->viface_list);
-		spin_unlock_bh(&ipudp_lock);		
+		spin_unlock_bh(&ipudp_lock);	
 		ipudp->viface_count ++;	
 }
 
 void 
 ipudp_list_tun_add(ipudp_dev_priv *p, ipudp_tun_params *tun){ 
-		ipudp_list_tun_item *item;
+		ipudp_list_tun_item *item, *t;
+		
+		if((p->params.mode == MODE_FIXED) && (!(list_empty(&(p->list_tun))))) {
+				t = (ipudp_list_tun_item *)p->list_tun.next;
+				spin_lock_bh(&ipudp_lock);
+				list_del_rcu(&(t->list));
+				spin_unlock_bh(&ipudp_lock);
+				synchronize_rcu();
+				kfree(t);
+		}
 
 		item = (ipudp_list_tun_item *)kmalloc(sizeof(*item), GFP_KERNEL);
 		memcpy(&(item->tun), tun, sizeof(*tun));
-	
-		/*XXX respesct tid order XXX*/
-		//if(list_empty(priv->list_tun.next))	
-		//	list_add(&(item->list), &(p->list_tun));
-	
-		//list_for_each_entry(p, &(priv->list_tun.next), list) {	
-		//}
 
-		list_add(&(item->list), &(p->list_tun));
+		spin_lock_bh(&ipudp_lock);
+		list_add_rcu(&(item->list), &(p->list_tun));
+		spin_unlock_bh(&ipudp_lock);
 		p->tun_count++;
 }
 
@@ -112,20 +115,24 @@ void
 ipudp_list_tun_flush(ipudp_dev_priv *priv) {
 		ipudp_list_tun_item *p,*q;
 	
-		//XXX lock?	
 		list_for_each_entry_safe(p, q, &(priv->list_tun), list) {
-				list_del(&(p->list));
+				list_del_rcu(&(p->list));
+				synchronize_rcu();
 				kfree(p);
 		}
+
 		priv->tun_count = 0;
 }
+
 void 
 ipudp_list_tsa_add(ipudp_dev_priv *p, ipudp_tsa_params *tsa) {
 		ipudp_list_tsa_item *item;
 	
 		item = (ipudp_list_tsa_item *)kmalloc(sizeof(*item), GFP_KERNEL);
 		memcpy(&(item->tsa), tsa, sizeof(*tsa));
-		list_add(&(item->list), &(p->list_tsa));
+		spin_lock_bh(&ipudp_lock);
+		list_add_rcu(&(item->list), &(p->list_tsa));
+		spin_unlock_bh(&ipudp_lock);
 		p->tsa_count ++;
 }
 
@@ -140,8 +147,9 @@ ipudp_list_tsa_flush(ipudp_dev_priv *priv) {
 		ipudp_list_tsa_item *p,*q;
 	
 		list_for_each_entry_safe(p, q, &(priv->list_tsa), list) {
-				list_del(&(p->list));
+				list_del_rcu(&(p->list));
 				sock_release(p->tsa.sock);
+				synchronize_rcu();
                 kfree(p);
 		}
 		priv->tsa_count = 0;
@@ -149,51 +157,55 @@ ipudp_list_tsa_flush(ipudp_dev_priv *priv) {
 }
 
 static void 
-ipudp_tunnel_uninit(struct net_device *dev) {			
-		static ipudp_dev * viface; 
-
-		viface = __list_ipudp_dev_locate_by_name(dev->name);
-		ipudp_dev_priv *priv = netdev_priv(dev);					
-		
-		//XXX check it		
-		spin_lock_bh(&ipudp_lock);
+__list_viface_del(ipudp_dev *viface) {
 		list_del_rcu(&(viface->list));									
-		spin_unlock_bh(&ipudp_lock);
-			
+}
+
+static void 
+ipudp_tunnel_uninit(struct net_device *dev) {			
+		ipudp_dev_priv *priv = netdev_priv(dev);
+		
 		ipudp_clean_priv(priv);
-
-		synchronize_rcu();
-		kfree(viface);
-
 }
 
 static void 
 __list_dev_flush(void) {
 		ipudp_dev *p,*q;
-	
+
 		list_for_each_entry_safe(p, q, ipudp->viface_list, list) {
-				//priv = netdev_priv(p->dev);
-				//ipudp_clean_priv(priv);	
 				unregister_netdev(p->dev);
-				//list_del(&(p->list));
+				list_del(&p->list);
+				kfree(p);
 		}
 }
 
-
 int 
 ipudp_del_viface(ipudp_viface_params *p) {					
-		static ipudp_dev * viface; 
+		ipudp_dev *viface; 
+		struct net_device *dev;
 
-
+		spin_lock_bh(&ipudp_lock);
 		list_for_each_entry(viface, ipudp->viface_list, list) {
 				if (!strcmp(p->name, viface->dev->name)) {
-						unregister_netdev(viface->dev);
-						return IPUDP_OK;
+						dev = viface->dev;
+						goto found;
 				}
 		}
 
+		
+		spin_unlock_bh(&ipudp_lock);
 		return IPUDP_ERR_DEV_NOT_FOUND;
 
+found:
+		__list_viface_del(viface);
+	
+		spin_unlock_bh(&ipudp_lock);
+		
+		synchronize_rcu();
+		kfree(viface);
+
+		unregister_netdev(dev);
+		return IPUDP_OK;
 
 }
 
@@ -237,6 +249,7 @@ ipudp_tsa4_rcv(unsigned int hooknum, struct sk_buff *skb, const struct net_devic
 
 		return NF_ACCEPT;
 done:
+		rcu_read_unlock();
 		return NF_DROP;
 }
 
@@ -245,21 +258,22 @@ ipudp_tunnel_xmit(struct sk_buff *skb, struct net_device *dev) {
 		struct ipudp_dev_priv * p;	
 		ipudp_tun_params *tun = NULL;
 
-		rcu_read_lock();
 		
 		p = netdev_priv(dev);
 
+		//XXX Lock?
+		rcu_read_lock();
+		
 		if (!(tun = p->fw_lookup(skb, p))) {
 				dev_kfree_skb(skb);
 				dev->stats.tx_dropped++;
 				dev->stats.tx_errors++;
 				goto done;
 		}
-
 		p->tun_xmit(skb, tun, dev);
 
-		rcu_read_unlock();	
 done:
+		rcu_read_unlock();	
 		return NETDEV_TX_OK;
 }
 
@@ -344,16 +358,11 @@ new_dev_not_allowed(void) {
 
 static void 
 ipudp_clean_priv(ipudp_dev_priv * p) {
-		//I don't think I need to lock here because:
-		//1) we can't have 2 cuncurrent unregister_netdevice 
-		//2) unregister_netdevice should wait for its pck queue to get empty
-
 		/* free tun list */
 		ipudp_list_tun_flush(p);
 		/* free tsa list */
 		ipudp_list_tsa_flush(p);
 
-		/* TODO */
 		return;
 }
 
@@ -400,6 +409,7 @@ ipudp_tun4_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 		struct net_device_stats *stats = &dev->stats;
 		int err;
 
+		
 		if (skb->protocol != htons(ETH_P_IP))
 				goto tx_error;
 
@@ -768,14 +778,24 @@ static int
 __ipudp_create_and_add_tsa(ipudp_dev_priv *p, ipudp_tun_params *tun) {
 		int ret;
 		ipudp_tsa_params tsa;
+		ipudp_list_tsa_item *t;
 
 		memset(&tsa,0,sizeof(tsa));
-
+	
 		if (p->tsa_count == p->max_tsa)	
 				return IPUDP_ERR_TSA_MAX;
 
 		if ((ret = __tsa_reserve_port(tun, &tsa)))
 				return ret;
+	
+		if((p->params.mode == MODE_FIXED) && (!(list_empty(&(p->list_tsa))))) {
+				t = (ipudp_list_tsa_item *)p->list_tsa.next;
+				spin_lock_bh(&ipudp_lock);
+				list_del_rcu(&(t->list));
+				spin_unlock_bh(&ipudp_lock);
+				synchronize_rcu();
+				kfree(t);
+		}
 
 		ipudp_list_tsa_add(p, &tsa);
 
@@ -801,38 +821,23 @@ ipudp_del_tsa(ipudp_tsa_params *tsa) {
 		return 0;
 }
 
-static void __del_fixed_tun_tsa(ipudp_dev_priv *priv) {
-		
-		if(!(list_empty(&(priv->list_tun)))) {
-				spin_lock_bh(&ipudp_lock);
-				list_del_rcu(priv->list_tun.next);
-				spin_unlock_bh(&ipudp_lock);
-				synchronize_rcu();
-				printk("yuppi\n");
-				kfree(priv->list_tun.next);
-		}
-		if(!(list_empty(&(priv->list_tsa)))) {
-				spin_lock_bh(&ipudp_lock);
-				list_del_rcu(priv->list_tsa.next);
-				spin_unlock_bh(&ipudp_lock);
-				synchronize_rcu();
-				printk("yuppi\n");
-				kfree(priv->list_tsa.next);
-		}
-}
-
 int
 ipudp_bind_tunnel(ipudp_viface_params *p, ipudp_tun_params *tun) {
 		int ret;
 		ipudp_dev *viface;
 		struct ipudp_dev_priv *priv;
+		struct net_device *dev;
 
+		rcu_read_lock();
 		viface =__list_ipudp_dev_locate_by_name(p->name);
 		if (!viface) {
 				ret = IPUDP_ERR_DEV_NOT_FOUND;
+				rcu_read_unlock();
 				goto err_ret;
 		}
-		priv = (ipudp_dev_priv *)netdev_priv(viface->dev);
+		dev = rcu_dereference(viface->dev);
+
+		priv = (ipudp_dev_priv *)netdev_priv(dev);	
 
 		if (priv->tun_count == priv->max_tun) {	
 				ret = IPUDP_ERR_TUN_MAX;
@@ -843,22 +848,15 @@ ipudp_bind_tunnel(ipudp_viface_params *p, ipudp_tun_params *tun) {
 				//tun->tid = __get_new_tid(&(priv->list_tun));TODO
 				ret = IPUDP_ERR_TUN_BAD_PARAMS; //TODO
 				goto err_ret;
-		}
-	
+		}	
+		rcu_read_unlock();
+		
 		if(  (( __tun_src_is_null(tun)) && (!(tun->dev_idx)))
 				|| __tun_dst_is_null(tun) || (!(tun->destport)) 
 											|| (!(tun->srcport)) )
 		{
 				ret = IPUDP_ERR_TUN_BAD_PARAMS;
 				goto err_ret;
-		}
-
-		if (priv->params.mode == MODE_FIXED){
-				spin_lock_bh(&ipudp_lock);	
-				ipudp_list_tsa_flush(priv);
-				ipudp_list_tun_flush(priv);
-				spin_unlock_bh(&ipudp_lock);
-				//__del_fixed_tun_tsa(priv);
 		}
 
 		/* reserve listening port and add tsa to list */
@@ -880,6 +878,7 @@ ipudp_add_viface(ipudp_viface_params * p) {
 		struct net_device *dev;
 		struct ipudp_dev_priv * ipudp_priv;
 
+		
 		if (new_dev_not_allowed()) {
 				err = IPUDP_ERR_DEV_MAX;
 				goto err_dev_alloc;
@@ -933,6 +932,7 @@ ipudp_add_viface(ipudp_viface_params * p) {
 		////XXX maybe useless
 		__list_dev_add(dev); 
 
+		
 		return IPUDP_OK;
 
 err_reg_dev:
@@ -941,6 +941,7 @@ err_init_priv:
 		ipudp_clean_priv(ipudp_priv);
 err_alloc_name:
 err_dev_alloc:
+		spin_unlock_bh(&ipudp_lock);
 		return err;
 
 }
