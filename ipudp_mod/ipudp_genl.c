@@ -1,8 +1,7 @@
+#include <linux/version.h>
 #include "ipudp.h"
-//#include "ipudp_genl.h"
 
-//#define MSG_BAD_FORMAT			"ipudp genl msg bad format"
-
+#define COMP_LINUX_VERSION_CODE 132640
 
 //XXX TODO XXX set_msg_attr ugly 
 static struct 
@@ -95,11 +94,11 @@ send_nl_msg(const int command, const unsigned int n_data, u8 msg_type,
 
 		genlmsg_end(skb, skb_head);
 
-//#if LINUX_VERSION_CODE < IPUDP_LINUX_VERSION_CODE
+#if LINUX_VERSION_CODE < COMP_LINUX_VERSION_CODE
 		if(genlmsg_unicast(skb, info->snd_pid ) != 0){
-//#else
-//	if(genlmsg_unicast(&init_net, skb, info->snd_pid ) != 0){
-//#endif
+#else
+	if(genlmsg_unicast(&init_net, skb, info->snd_pid ) != 0){
+#endif
 				printk("ipudp_send_nl_msg: error sending message\n");
 				return -1;
 		}
