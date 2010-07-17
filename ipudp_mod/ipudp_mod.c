@@ -240,7 +240,6 @@ ipudp_tsa4_rcv(unsigned int hooknum, struct sk_buff *skb, const struct net_devic
 										(tsa_i->tsa.port == udph->dest)) {
 
 								priv->tun_recv(skb, p->dev);
-								rcu_read_unlock();
 								goto done;
 						}
 				}
