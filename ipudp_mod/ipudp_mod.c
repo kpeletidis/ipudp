@@ -388,18 +388,8 @@ __u16 __udp_cheksum(struct iphdr *iph, struct udphdr *udph) {
 
 void
 ipudp_tun4_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *dev) {
-	
-#if 0
-	printk("ipudp: dev tun4 xmit\n");
-	printk("ipudp: outgoing tunnel: \n");
-	if (tun->af == IPV4) {
-		printk("daddr: %d.%d.%d.%d", NIPQUAD(tun->u.v4p.dest));
-		printk("daddr: %d.%d.%d.%d", NIPQUAD(tun->u.v4p.src));
-	}
-	printk("sport: %d ", (int)ntohs(tun->srcport));
-	printk("dport: %d \n", (int)ntohs(tun->destport));
-#endif
-	struct iphdr *iph_in =(struct iphdr *) skb->data;
+	void *iph_in = skb->data;
+	u16 in_len;
 	struct iphdr *iph;
 	struct udphdr *udph;
 	struct sk_buff *new_skb; 
@@ -407,12 +397,18 @@ ipudp_tun4_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 	struct netdev_queue *txq = netdev_get_tx_queue(dev, 0);
 	struct net_device_stats *stats = &dev->stats;
 	int err;
-
 	
-	if (skb->protocol != htons(ETH_P_IP))
-		goto tx_error;
 
-	if (skb->len > dev->mtu) {
+	if (skb->protocol == htons(ETH_P_IP)) 
+		in_len = ntohs( ((struct iphdr *)iph_in)->tot_len );
+	else if(skb->protocol == htons(ETH_P_IPV6))
+		in_len = ntohs( ((struct ipv6hdr *)iph_in)->payload_len ) + sizeof(struct ipv6hdr) ;
+	else {
+		stats->tx_dropped++;
+		goto tx_error;
+	}
+
+	if (in_len > dev->mtu) {
 		stats->tx_dropped++;
 		goto tx_error;
 	}
@@ -424,7 +420,7 @@ ipudp_tun4_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 				.ip4_u = {
 					.daddr 	= tun->u.v4p.dest,
 					.saddr 	= tun->u.v4p.src,
-					.tos 	= RT_TOS(iph_in->tos)
+					.tos 	= 0,
 				}
 			},
 			.proto 	= IPPROTO_IP
@@ -456,7 +452,7 @@ ipudp_tun4_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 
 		dev_kfree_skb(skb);
 		skb = new_skb;
-		iph_in = ip_hdr(skb);
+		iph_in = skb->data;
 	}
 
 	skb_push(skb, IPUDP4_HDR_LEN);
@@ -470,7 +466,6 @@ ipudp_tun4_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 
 	//push ipudp tunnel header
 	{
-		__u16 cs;	
 		//IP
  		iph		= (struct iphdr *)skb->data;
 		iph->version	= 4;
@@ -480,31 +475,24 @@ ipudp_tun4_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 		iph->tos	= 0;
 		iph->saddr	= rt->rt_src;
 		iph->daddr 	= rt->rt_dst;
-		iph->tot_len 	= htons(ntohs(iph_in->tot_len) + IPUDP4_HDR_LEN);
-		iph->ttl	= iph_in->ttl;
+		iph->tot_len 	= htons(in_len + IPUDP4_HDR_LEN);
+		iph->ttl	= 0x40;
 		iph->check 	= 0;
 		//UDP
 		udph 		= (struct udphdr *)(skb->data + 20);
 		udph->source	= tun->srcport;
 		udph->dest	= tun->destport;
-		udph->len 	= htons(ntohs(iph_in->tot_len) + 8);
+		udph->len 	= htons(in_len + 8);
 		udph->check	= 0;
 
 		ip_select_ident(ip_hdr(skb), &rt->u.dst, NULL);
 		skb->ip_summed = CHECKSUM_NONE; //it will be computed later on
-		cs = __udp_cheksum(iph, udph);
-		udph->check = cs;
+		udph->check = __udp_cheksum(iph, udph);
 	}
 
 	nf_reset(skb);
 	skb->mark = tun->mark;
-#if 0
-	printk("ipudp: outgoing packet\n");
-	printk("daddr: %d.%d.%d.%d", NIPQUAD(tun->u.v4p.dest));
-		printk("daddr: %d.%d.%d.%d", NIPQUAD(tun->u.v4p.src));
-	printk("sport: %d ", (int)ntohs(tun->srcport));
-	printk("dport: %d \n", (int)ntohs(tun->destport));
-#endif	
+
 	dev->stats.tx_packets++;
 	dev->stats.tx_bytes += skb->len;
 	err = ip_local_out(skb);
