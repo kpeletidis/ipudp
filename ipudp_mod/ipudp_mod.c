@@ -524,14 +524,30 @@ ipudp_tun4_recv(struct sk_buff *skb, struct net_device *dev) {
 		
 	/* IP UDP CHECKSUM verification */
 	//TODO
-	
-	struct sk_buff *new_skb = skb_clone(skb, GFP_ATOMIC);
-	
+	struct iphdr *ip;
+	struct sk_buff *new_skb; 
+
+	new_skb = skb_clone(skb, GFP_ATOMIC);
 	secpath_reset(new_skb);
 	//new_skb->mac_header = new_skb->network_header;
 	skb_pull(new_skb, IPUDP4_HDR_LEN);
 	//skb_reset_network_header(new_skb);
-	new_skb->protocol = htons(ETH_P_IP);
+
+	ip = (struct iphdr *)new_skb->data;
+	if (ip->version == 4)
+		new_skb->protocol = htons(ETH_P_IP);
+
+	else if (ip->version == 6)
+		new_skb->protocol = htons(ETH_P_IPV6);
+
+	else {
+		dev_kfree_skb(new_skb);
+		dev->stats.rx_dropped++;
+		return;
+	}	
+
+
+	// XXX TODO check if so...
 	new_skb->pkt_type = PACKET_HOST;
 	
 	/* Reschedule NET_RX softirq */
@@ -853,8 +869,6 @@ ipudp_add_viface(ipudp_viface_params * p) {
 	int err;
 	struct net_device *dev;
 	struct ipudp_dev_priv * ipudp_priv;
-
-printk("AO\n");
 
 	if (new_dev_not_allowed()) {
 		err = IPUDP_ERR_DEV_MAX;
