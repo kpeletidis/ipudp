@@ -236,8 +236,8 @@ ipudp_tsa4_rcv(unsigned int hooknum, struct sk_buff *skb, const struct net_devic
 	list_for_each_entry_rcu(p, ipudp->viface_list, list) {
 		priv = netdev_priv(p->dev);
 		list_for_each_entry_rcu(tsa_i, &(priv->list_tsa), list) {
-			if ((tsa_i->tsa.u.v4addr == iph->daddr) && 
-					(tsa_i->tsa.port == udph->dest)) {
+			if (((tsa_i->tsa.u.v4addr == iph->daddr) || (tsa_i->tsa.dev_idx == in->ifindex)) 
+					&& (tsa_i->tsa.port == udph->dest)) {
 
 				priv->tun_recv(skb, p->dev);
 				goto done;
@@ -249,6 +249,7 @@ ipudp_tsa4_rcv(unsigned int hooknum, struct sk_buff *skb, const struct net_devic
 	return NF_ACCEPT;
 done:
 	rcu_read_unlock();
+	/* update_fw_table */
 	return NF_DROP;
 }
 
@@ -522,20 +523,8 @@ void
 ipudp_tun4_recv(struct sk_buff *skb, struct net_device *dev) {
 		
 	/* IP UDP CHECKSUM verification */
-
-#if 0
-	/* continue NETFILTER HOOK */
-	secpath_reset(skb);
-	dev->stats.rx_packets++;
-	dev->stats.rx_bytes += skb->len;
-	skb_pull(skb, IPUDP4_HDR_LEN);
-	skb_reset_network_header(skb);
-
-	skb->dev = dev;
-	skb_dst_drop(skb);
-	nf_reset(skb);
-#endif
-
+	//TODO
+	
 	struct sk_buff *new_skb = skb_clone(skb, GFP_ATOMIC);
 	
 	secpath_reset(new_skb);
@@ -865,7 +854,8 @@ ipudp_add_viface(ipudp_viface_params * p) {
 	struct net_device *dev;
 	struct ipudp_dev_priv * ipudp_priv;
 
-	
+printk("AO\n");
+
 	if (new_dev_not_allowed()) {
 		err = IPUDP_ERR_DEV_MAX;
 		goto err_dev_alloc;
@@ -928,7 +918,6 @@ err_init_priv:
 	ipudp_clean_priv(ipudp_priv);
 err_alloc_name:
 err_dev_alloc:
-	spin_unlock_bh(&ipudp_lock);
 	return err;
 
 }
