@@ -281,7 +281,7 @@ ipudp_dev_priv {
 	void (*tun_xmit)(struct sk_buff *b, ipudp_tun_params *tun, struct net_device *dev);
 	void (*tun_recv)(struct sk_buff *b, struct net_device *d);
 	ipudp_tun_params* (*fw_lookup)(struct sk_buff *b, void *p);
-	void (*fw_update)(struct sk_buff *b, void *p);
+	void (*fw_update)(struct sk_buff *b, void *p); //XXX does it make sense?
 }ipudp_dev_priv;
 
 /* function prototypes */

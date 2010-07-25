@@ -210,6 +210,36 @@ ipudp_tsa6_rcv(unsigned int hooknum, struct sk_buff *skb, const struct net_devic
 }
 
 
+__u16 __udp_cheksum(struct iphdr *iph, struct udphdr *udph) {
+	__wsum	csum;
+
+	csum = csum_partial(udph, ntohs(udph->len), 0);
+	return csum_tcpudp_magic(iph->saddr, iph->daddr, ntohs(udph->len), IPPROTO_UDP, csum);
+}
+
+static int
+ipudp_checksum4_ok(struct iphdr *iph, struct udphdr *udph) {
+	__u16 csum;
+
+	//verify ip csum
+	csum = iph->check;
+	iph->check = 0;	
+	iph->check = ip_fast_csum((unsigned char *)iph, iph->ihl);
+
+	if (csum != iph->check)
+		return 0;
+
+	//verify udp csum
+	csum = udph->check;	
+	udph->check = 0;
+	udph->check = __udp_cheksum(iph, udph);
+
+	if (csum != udph->check)
+		return 0;
+
+	return 1;
+}
+
 unsigned int 
 ipudp_tsa4_rcv(unsigned int hooknum, struct sk_buff *skb, const struct net_device *in,
 			  const struct net_device *out, int (*okfn)(struct sk_buff*)) {
@@ -232,7 +262,17 @@ ipudp_tsa4_rcv(unsigned int hooknum, struct sk_buff *skb, const struct net_devic
 			if (((tsa_i->tsa.u.v4addr == iph->daddr) || (tsa_i->tsa.dev_idx == in->ifindex)) 
 					&& (tsa_i->tsa.port == udph->dest)) {
 
-				priv->tun_recv(skb, p->dev);
+				if (iph->frag_off & htons(IP_MF)) {
+					/* fragmentation not supported */	
+					p->dev->stats.tx_dropped++;
+					goto done;
+				}
+
+				if (ipudp_checksum4_ok(iph, udph))
+					priv->tun_recv(skb, p->dev);
+				else
+					p->dev->stats.tx_dropped++;
+
 				goto done;
 			}
 		}
@@ -370,13 +410,6 @@ ipudp_fixed_out_tun(struct sk_buff *buff, void *priv) {
 	return (ipudp_tun_params *)&(item->tun);
 }
 
-__u16 __udp_cheksum(struct iphdr *iph, struct udphdr *udph) {
-	__wsum	csum;
-
-	csum = csum_partial(udph, ntohs(udph->len), 0);
-	return csum_tcpudp_magic(iph->saddr, iph->daddr, ntohs(udph->len), IPPROTO_UDP, csum);
-}
-
 void
 ipudp_tun4_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *dev) {
 	void *iph_in = skb->data;
@@ -457,27 +490,26 @@ ipudp_tun4_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 
 	//push ipudp tunnel header
 	{
-		//IP
- 		iph		= (struct iphdr *)skb->data;
+ 		iph				= (struct iphdr *)skb->data;
 		iph->version	= 4;
-		iph->ihl	= sizeof(struct iphdr)>>2;
+		iph->ihl		= sizeof(struct iphdr)>>2;
 		iph->frag_off 	= htons(IP_DF); //XXX
 		iph->protocol	= IPPROTO_UDP;
-		iph->tos	= 0;
-		iph->saddr	= rt->rt_src;
-		iph->daddr 	= rt->rt_dst;
+		iph->tos		= 0;
+		iph->saddr		= rt->rt_src;
+		iph->daddr 		= rt->rt_dst;
 		iph->tot_len 	= htons(in_len + IPUDP4_HDR_LEN);
-		iph->ttl	= 0x40;
-		iph->check 	= 0;
-		//UDP
-		udph 		= (struct udphdr *)(skb->data + 20);
+		iph->ttl		= 0x40;
+		iph->check 		= 0;
+		
+		udph 			= (struct udphdr *)(skb->data + 20);
 		udph->source	= tun->srcport;
-		udph->dest	= tun->destport;
-		udph->len 	= htons(in_len + 8);
-		udph->check	= 0;
+		udph->dest		= tun->destport;
+		udph->len 		= htons(in_len + 8);
+		udph->check		= 0;
 
 		ip_select_ident(ip_hdr(skb), &rt->u.dst, NULL);
-		skb->ip_summed = CHECKSUM_NONE; //it will be computed by ip
+		skb->ip_summed = CHECKSUM_NONE; //it will be computed by ip layer
 		udph->check = __udp_cheksum(iph, udph);
 	}
 
@@ -511,9 +543,6 @@ ipudp_tun6_xmit(struct sk_buff *buf, ipudp_tun_params *tun, struct net_device *d
 
 void
 ipudp_tun4_recv(struct sk_buff *skb, struct net_device *dev) {
-		
-	//TODO
-	/* IP UDP CHECKSUM verification */
 	struct iphdr *ip;
 	struct sk_buff *new_skb; 
 
@@ -594,6 +623,7 @@ __ipudp_init_priv_data(ipudp_dev_priv *p) {
 	p->max_tsa = IPUDP_CONF_MAX_TSA;
 
 	return IPUDP_OK;
+
 done:
 	return ret;
 }
