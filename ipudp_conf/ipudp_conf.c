@@ -8,15 +8,6 @@
 #include "ipudp_conf.h"
 #include <ipudp.h>
 
-//TODO use ipudp_nl_cmd_spec
-typedef enum 
-_cmd_add_type {
-	VIFACE = 1,
-	TUN,
-	TSA,
-	RULE,
-}cmd_add_type;
-
 ipudp_genl_cmd cmd = 0;
 int cmd_attr = 0;
 
@@ -345,7 +336,7 @@ main(int argc, char **argv){
 			}
 
 			if (do_cmd_list(viface_name, cmd_attr) != 0)
-					printf("Error getting list of type %d\n", cmd_attr);
+					printf("Error getting list\n");
 			break;	
 
 		case IPUDP_C_MODULE_TEST:

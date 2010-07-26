@@ -8,6 +8,7 @@
 #include <sys/socket.h>
 #include <linux/netlink.h>
 #include <linux/genetlink.h>
+#include <arpa/inet.h>
 #include <errno.h>
 #include "ipudp_conf.h"
 
@@ -172,7 +173,6 @@ receive_response(void){
 
 	if(resp.g.cmd == 1) return 0;  //???? TODO
 
-	parse_nl_attrs();
 	
 	return 0;
 }
@@ -200,6 +200,7 @@ ipudp_genl_client_init(){
 	return 0;
 }
 
+/*
 static void 
 print_nl_attr(struct nlattr *na){
 	if(na == NULL){
@@ -221,7 +222,8 @@ print_nl_attr(struct nlattr *na){
 	//else if(na->nla_type == IPUDP_A_UNSPEC) 		printf("\nContent: %s", (char *)data);
 	//else printf("\n Content - unknown format");
 }
-
+*/
+/*
 static void 
 print_nl_attrs(void){
 	int i;
@@ -229,6 +231,7 @@ print_nl_attrs(void){
 		if(nl_attr[i] != NULL) print_nl_attr(nl_attr[i]);
 	}
 }
+*/
 
 int 
 do_cmd_module_test(void){
@@ -264,6 +267,8 @@ do_cmd_module_test(void){
 		printf("receive_response error!\n");
 		return err;
 	}
+	
+	parse_nl_attrs();
 	
 	err = *(int*)get_nl_data(IPUDP_A_RET_CODE);	
 	s = (char *) get_nl_data(IPUDP_A_STRING);
@@ -309,6 +314,7 @@ do_cmd_add_viface(ipudp_viface_params *p){
 		return -1;
 	}
 	
+	parse_nl_attrs();
 	/* parse the response: 
 	in this case we expect a msg without attributes (OK)
 	or a message with IPUDP_A_ERROR_DESC (an error occurred)*/
@@ -365,6 +371,8 @@ do_cmd_del_viface(ipudp_viface_params *p){
 		return -1;
 	}
 
+	parse_nl_attrs();
+	
 	if ((ret = *(int *)get_nl_data(IPUDP_A_RET_CODE))) {	
 		printf("do_cmd_del_viface: error code: %d\n",ret);
 	
@@ -382,14 +390,178 @@ do_cmd_del_viface(ipudp_viface_params *p){
 }
 
 
+static void 
+__print_viface_params(ipudp_viface_params *p) {
+	char mode[64], af[64];
+	
+	memset(mode,0,64);
+	memset(af,0,64);
+
+	switch(p->mode) {
+		case MODE_FIXED:
+			strcat(mode,"fixed");
+			break;
+
+		//TODO extend it
+		
+		default:
+			printf("Unknown viface mode\n");
+			return;
+	}
+
+	switch(p->af_out) {
+		case IPV4:
+			strcat(af,"ipv4");
+			break;
+		case IPV6:
+			strcat(af,"ipv6");
+			break;
+	
+		default:
+			printf("Unknown af_out\n");
+			return;
+	}
+	
+	printf("\tinterface %s, outer header %s, encapsulation mode %s\n",p->name, af, mode);
+
+}
+
+
+static void 
+__print_tun_params(ipudp_tun_params * data) {
+	char ip_src[64];
+	char ip_dest[64];
+	char temp[64];
+	char ifname[IFNAMSIZ];
+
+	memset(ip_src, 0, 64);
+	memset(ip_dest, 0, 64);
+	memset(temp, 0, 64);
+	memset(ifname, 0, IFNAMSIZ);
+
+	if (data->af == IPV4) {
+		if (!data->dev_idx)
+			inet_ntop(AF_INET, &(data->u.v4p.src), ip_src, 64);
+		inet_ntop(AF_INET, &(data->u.v4p.dest), ip_dest, 64);
+	}
+	else if (data->af == IPV6) {
+		if (!data->dev_idx)
+			inet_ntop(AF_INET, &(data->u.v6p.src), ip_src, 64);
+		inet_ntop(AF_INET, &(data->u.v6p.dest), ip_dest, 64);
+	}
+	else {
+		printf("unknown outer af family\n");
+		return;
+	}
+
+	if (data->dev_idx) {
+		if (get_iface_name_by_idx(data->dev_idx, ifname) < 0) {
+			sprintf(temp,"underlying device index %d", data->dev_idx);
+			printf("warning: error getting iface name from index. Are you root?\n");
+		}
+		else 	
+			sprintf(temp,"underlying device %s", ifname);
+	}
+	else
+		sprintf(temp,"source IP address %s", ip_src);
+
+	printf("\ttunnel %d, %s, destination IP address %s, source UDP port %d, destination UDP port %d, mark %d\n",
+			data->tid, temp, ip_dest, ntohs(data->srcport), ntohs(data->destport), data->mark);
+
+	return;
+}
+
+static void 
+__print_list_attr(ipudp_nl_cmd_spec cmd_spec, void *data) {
+
+	switch(cmd_spec) {
+		case CMD_S_VIFACE:
+			__print_viface_params((ipudp_viface_params *)data);
+			break;
+		case CMD_S_TUN:
+			__print_tun_params((ipudp_tun_params *)data);
+			break;
+		case CMD_S_TSA:
+			/*TODO*/
+			break;
+		case CMD_S_RULE:
+			/*TODO*/
+			break;
+		default: //can't happen...
+			printf("Unknown cmd_type %d\n",cmd_spec);
+			break;
+	}
+}
+
+//this function is realyl really ugly... TODO
+static int 
+__parse_list(ipudp_nl_cmd_spec cmd_spec) {
+	int ret = 0;
+	int ret_code;
+	void *data;
+	ipudp_nl_list_params *list_params;
+	unsigned int n_attrs = 0;
+	struct nlattr *na;
+	unsigned int data_len = GENLMSG_DATALEN(&resp.n);
+
+	/* get return code */
+	na = (struct nlattr *) GENLMSG_DATA(&resp);
+	data = GENLMSG_NLA_DATA(na);
+	n_attrs++;
+	data_len = data_len - NLA_ALIGN(na->nla_len);
+	
+	if (na->nla_type != IPUDP_A_RET_CODE) { 
+		printf("do_cmd_list: expected IPUDP_A_RET_CODE attribute\n");
+		return 1;
+	}
+	ret_code = *(int*)data;
+	
+	if (ret_code) {
+			printf("do_cmd_list: error code %d\n", ret_code);
+			return 1;
+	}
+
+	/* get list params */
+	na = (struct nlattr *) GENLMSG_NLA_NEXT(na);
+	data = GENLMSG_NLA_DATA(na);
+	n_attrs++;
+	data_len = data_len - NLA_ALIGN(na->nla_len);
+	list_params = (ipudp_nl_list_params *)data;
+
+
+	if (na->nla_type != IPUDP_A_LIST_PARAMS){
+		printf("do_cmd_list: error, expected IPUDP_A_LIST_PARAMS attribute\n");
+		return 1;
+	}
+	if (cmd_spec != CMD_S_VIFACE) 
+		printf("list type %d for virtual interface %s, n_intems: %d\n", cmd_spec, 
+				list_params->dev_name, list_params->n_items);	
+	else 
+		printf("virtual interface list, n_intems: %d\n", list_params->n_items);	
+		
+	while(data_len > 0){
+		na = (struct nlattr *) GENLMSG_NLA_NEXT(na);
+		data = GENLMSG_NLA_DATA(na);
+		n_attrs++;
+		data_len = data_len - NLA_ALIGN(na->nla_len);
+
+		__print_list_attr(cmd_spec, data);
+	}
+
+	if (n_attrs != 2 + list_params->n_items) {
+		printf("do_cmd_list: warning, expected %d list items\n", list_params->n_items);
+	}
+
+	return ret;
+}
+
 int do_cmd_list(char *viface_name, ipudp_nl_cmd_spec cmd_spec) {
 	struct nlattr *na;
 	int ret;
-	ipudp_nl_list_params p, *q;
-	char *error_desc = NULL;
+	ipudp_nl_list_params p;
 
 	memset(&p,0,sizeof(p));
-
+	
 	//TODO iface idx from name
 	if (viface_name) 
 		memcpy(&p.dev_name,viface_name, strlen(viface_name));
@@ -423,17 +595,8 @@ int do_cmd_list(char *viface_name, ipudp_nl_cmd_spec cmd_spec) {
 		return -1;
 	}
 
-	if ((ret = *(int *)get_nl_data(IPUDP_A_RET_CODE))) {	
-		printf("do_cmd_list: error code: %d\n",ret);
-		
-		if ((error_desc = (char *)  get_nl_data(IPUDP_A_ERROR_DESC)))
-			printf("%s\n",error_desc);
-	}
-	else {
-		q = (ipudp_nl_list_params *)get_nl_data(IPUDP_A_LIST_PARAMS);
-		printf("list type %d n_intems: %d \nTODO\n", cmd_spec, q->n_items);
-		//TODO parse_list(cmd_attr)
-	}
+	/* TODO */
+	ret = __parse_list(cmd_spec);
 
 	return ret;
 }
@@ -481,6 +644,7 @@ do_cmd_add_tun(ipudp_viface_params *v, ipudp_tun_params *p){
 		return -1;
 	}
 	
+	parse_nl_attrs();
 	/* parse the response: 
 	in this case we expect a msg without attributes (OK)
 	or a message with IPUDP_A_ERROR_DESC (an error occurred)*/

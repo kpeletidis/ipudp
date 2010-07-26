@@ -308,17 +308,21 @@ ipudp_genl_do_list(struct sk_buff *skb, struct genl_info *info){
 			set_msg_attr(&attr[n_attr], IPUDP_A_LIST_PARAMS, 
 					list_params, sizeof(*list_params), 0, &n_attr);
 
-			list_for_each_entry(p, listp, list) {
+			rcu_read_lock();
+			list_for_each_entry_rcu(p, listp, list) {
 					priv = netdev_priv(p->dev);
 					set_msg_attr(&attr[n_attr], IPUDP_A_VIFACE_PARAMS, &priv->params, 
 						sizeof(priv->params), 0, &n_attr);
 			}
+			rcu_read_unlock();
 			break;
 		}
 		case CMD_S_TUN:
 		{
 			ipudp_list_tun_item *t;
 			ipudp_dev_priv *priv = NULL;
+			
+			rcu_read_lock();
 			priv = ipudp_get_priv(list_params->dev_name);
 			
 			if (!priv) {
@@ -326,6 +330,7 @@ ipudp_genl_do_list(struct sk_buff *skb, struct genl_info *info){
 				attr = kmalloc(sizeof(*attr), GFP_KERNEL);
 				set_msg_attr(&attr[n_attr], IPUDP_A_RET_CODE, &ret_code, 
 					sizeof(ret_code), 0, &n_attr);
+				rcu_read_unlock();
 				goto done;
 			}
 			
@@ -347,6 +352,8 @@ ipudp_genl_do_list(struct sk_buff *skb, struct genl_info *info){
 							sizeof(t->tun), 0, &n_attr);
 			}
 	
+			rcu_read_unlock();
+
 			break;
 		}
 

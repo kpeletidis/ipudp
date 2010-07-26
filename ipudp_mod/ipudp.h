@@ -193,7 +193,7 @@ typedef struct
 _ipudp_tun_params {
 	//TODO TUN? TAP?
 	ipudp_af_inet af;  	//ip v4 or v6. the following union
-				//depend on this value...
+						//depend on this value...
 	int dev_idx;		//idx of the underlying iface	
 	union {
 		struct {

@@ -90,6 +90,7 @@ ipudp_list_tun_add(ipudp_dev_priv *p, ipudp_tun_params *tun){
 		t = (ipudp_list_tun_item *)p->list_tun.next;
 		spin_lock_bh(&ipudp_lock);
 		list_del_rcu(&(t->list));
+		p->tun_count--;
 		spin_unlock_bh(&ipudp_lock);
 		synchronize_rcu();
 		kfree(t);
@@ -191,7 +192,8 @@ ipudp_del_viface(ipudp_viface_params *p) {
 	return IPUDP_ERR_DEV_NOT_FOUND;
 
 found:
-	list_del_rcu(&(viface->list));						
+	list_del_rcu(&(viface->list));
+	ipudp->viface_count--;	
 	spin_unlock_bh(&ipudp_lock);
 	
 	synchronize_rcu();

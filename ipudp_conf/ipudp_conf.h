@@ -5,6 +5,7 @@
 #include <sys/socket.h>
 #include <linux/netlink.h>
 #include <linux/genetlink.h>
+#include <net/if.h>  
 #include <sys/types.h>
 #include <unistd.h>
 #include "list.h"
@@ -12,6 +13,15 @@
 #include <ipudp.h> //kernel header
 
 #define MAX_BUF_LEN 1024
+
+//TODO use ipudp_nl_cmd_spec
+typedef enum 
+_cmd_add_type {
+	VIFACE = 1,
+	TUN,
+	TSA,
+	RULE,
+}cmd_add_type;
 
 struct genl_msg{
 	struct nlmsghdr n;
@@ -47,5 +57,5 @@ int do_cmd_list(char *, ipudp_nl_cmd_spec);
 
 /* utlis */
 int get_iface_idx_by_name(char *);
-
+int get_iface_name_by_idx(int, char *);
 #endif /* UPMT_USER_H_ */
