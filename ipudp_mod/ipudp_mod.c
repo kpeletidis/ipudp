@@ -197,9 +197,9 @@ found:
 	spin_unlock_bh(&ipudp_lock);
 	
 	synchronize_rcu();
-	kfree(viface);
 
 	unregister_netdev(dev);
+	kfree(viface);
 	return IPUDP_OK;
 
 }
