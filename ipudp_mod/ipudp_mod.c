@@ -114,7 +114,7 @@ ipudp_list_tun_del(ipudp_dev_priv *p, ipudp_tun_params *tun) {
 void
 ipudp_list_tun_flush(ipudp_dev_priv *priv) {
 	ipudp_list_tun_item *p,*q;
-	
+	//do I need XXX synchronize if device already removed?	
 	list_for_each_entry_safe(p, q, &(priv->list_tun), list) {
 		list_del_rcu(&(p->list));
 		synchronize_rcu();
@@ -179,7 +179,7 @@ ipudp_del_viface(ipudp_viface_params *p) {
 	ipudp_dev *viface; 
 	struct net_device *dev;
 
-	spin_lock_bh(&ipudp_lock);
+//	spin_lock_bh(&ipudp_lock);
 	list_for_each_entry(viface, ipudp->viface_list, list) {
 		if (!strcmp(p->name, viface->dev->name)) {
 			dev = viface->dev;
@@ -188,17 +188,20 @@ ipudp_del_viface(ipudp_viface_params *p) {
 	}
 
 	
-	spin_unlock_bh(&ipudp_lock);
+//	spin_unlock_bh(&ipudp_lock);
 	return IPUDP_ERR_DEV_NOT_FOUND;
 
 found:
+	unregister_netdev(dev);
+	spin_lock_bh(&ipudp_lock); //XXX
+	//XXX call clean priv data outside netdev_unregister XXX XXX XXX XXX XXX
 	list_del_rcu(&(viface->list));
-	ipudp->viface_count--;	
-	spin_unlock_bh(&ipudp_lock);
-	
+	spin_unlock_bh(&ipudp_lock);	
+	ipudp->viface_count--;
+
 	synchronize_rcu();
 
-	unregister_netdev(dev);
+	//unregister_netdev(dev);
 	kfree(viface);
 	return IPUDP_OK;
 
@@ -972,11 +975,11 @@ static int __init ipudp_init(void) {
 	ipudp->nf_hook_ops_in = p;
 	
 	//IPv6 hook
-	q = kzalloc(sizeof(struct nf_hook_ops), GFP_KERNEL);
-	if ((err = ipudp_nf6_init(q)))
-		goto err_nf6_hook;
+	//q = kzalloc(sizeof(struct nf_hook_ops), GFP_KERNEL);
+	//if ((err = ipudp_nf6_init(q)))
+	//	goto err_nf6_hook;
 
-	ipudp->nf_hook_ops_6_in = q;
+	//ipudp->nf_hook_ops_6_in = q;
 
 	return 0;
 
