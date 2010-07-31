@@ -106,24 +106,6 @@ ipudp_list_tun_add(ipudp_dev_priv *p, ipudp_tun_params *tun){
 }
 
 void 
-ipudp_list_tun_del(ipudp_dev_priv *p, ipudp_tun_params *tun) {
-	//TODO	
-	return;
-}
-
-void
-ipudp_list_tun_flush(ipudp_dev_priv *priv) {
-	ipudp_list_tun_item *p,*q;
-	list_for_each_entry_safe(p, q, &(priv->list_tun), list) {
-		list_del/*_rcu*/(&(p->list));
-		//synchronize_rcu();
-		kfree(p);
-	}
-
-	priv->tun_count = 0;
-}
-
-void 
 ipudp_list_tsa_add(ipudp_dev_priv *p, ipudp_tsa_params *tsa) {
 	ipudp_list_tsa_item *item;
 	
@@ -135,10 +117,15 @@ ipudp_list_tsa_add(ipudp_dev_priv *p, ipudp_tsa_params *tsa) {
 	spin_unlock_bh(&ipudp_lock);
 }
 
-void 
-ipudp_list_tsa_del(ipudp_dev_priv *p, ipudp_tsa_params *tsa) {
-	//TODO	
-	return;
+void
+ipudp_list_tun_flush(ipudp_dev_priv *priv) {
+	ipudp_list_tun_item *p,*q;
+	list_for_each_entry_safe(p, q, &(priv->list_tun), list) {
+		list_del(&(p->list));
+		kfree(p);
+	}
+
+	priv->tun_count = 0;
 }
 
 void 
@@ -146,12 +133,23 @@ ipudp_list_tsa_flush(ipudp_dev_priv *priv) {
 	ipudp_list_tsa_item *p,*q;
 	
 	list_for_each_entry_safe(p, q, &(priv->list_tsa), list) {
-		list_del/*_rcu*/(&(p->list));
+		list_del(&(p->list));
 		sock_release(p->tsa.sock);
-		//synchronize_rcu();
         kfree(p);
 	}
 	priv->tsa_count = 0;
+	return;
+}
+
+void 
+ipudp_list_tun_del(ipudp_dev_priv *p, ipudp_tun_params *tun) {
+	//TODO	
+	return;
+}
+
+void 
+ipudp_list_tsa_del(ipudp_dev_priv *p, ipudp_tsa_params *tsa) {
+	//TODO	
 	return;
 }
 
@@ -185,7 +183,6 @@ ipudp_del_viface(ipudp_viface_params *p) {
 			goto found;
 		}
 	}
-
 	
 	spin_unlock_bh(&ipudp_lock);
 	return IPUDP_ERR_DEV_NOT_FOUND;
@@ -337,19 +334,32 @@ ipudp_tunnel_setup(struct net_device *dev)
 	dev->netdev_ops         = &ipudp_netdev_ops;
 	dev->destructor         = free_netdev;
 	dev->type               = ARPHRD_TUNNEL;
-	dev->hard_header_len    = LL_MAX_HEADER + sizeof(struct iphdr) 
-				+ sizeof(struct udphdr);
-		
-	/*default starting MTU - it might be changed 
-	everytime we add a real interface under ipudp control*/
-	//XXX TODO cosnider ipv6 or v6 XXX
-	dev->mtu                = ETH_DATA_LEN - sizeof(struct iphdr) 
-					- sizeof(struct udphdr);
-
 	dev->flags              = IFF_NOARP;
 	dev->iflink             = 0;
 	dev->addr_len           = 4;
 	dev->features           |= NETIF_F_NETNS_LOCAL;
+}
+
+static int
+__set_viface_mtu(struct net_device *dev){
+	int tun_hdr_len;
+	ipudp_dev_priv *p = netdev_priv(dev);
+
+	switch(p->params.af_out) {
+		case IPV4:
+			tun_hdr_len = sizeof(struct iphdr) + sizeof(struct udphdr);	
+			break;
+		case IPV6:
+			tun_hdr_len = sizeof(struct ipv6hdr) + sizeof(struct udphdr);	
+			break;
+		default:
+			return IPUDP_BAD_PARAMS;
+	}
+
+	dev->hard_header_len = LL_MAX_HEADER + tun_hdr_len;	
+	dev->mtu = ETH_DATA_LEN - tun_hdr_len;
+
+	return 0;
 }
 
 static int 
@@ -392,7 +402,6 @@ new_dev_not_allowed(void) {
 static void 
 ipudp_clean_priv(ipudp_dev_priv * p) {
 	ipudp_list_tun_flush(p);
-
 	ipudp_list_tsa_flush(p);
 
 	return;
@@ -927,6 +936,10 @@ ipudp_add_viface(ipudp_viface_params * p) {
 	
 	err = __ipudp_init_priv_data(ipudp_priv);
 	if (err)
+		goto err_init_priv;	
+
+	//set device MTU and HRD_LEN by mode
+	if ((err = __set_viface_mtu(dev)))
 		goto err_init_priv;	
 
 	//register net device
