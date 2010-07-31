@@ -114,10 +114,9 @@ ipudp_list_tun_del(ipudp_dev_priv *p, ipudp_tun_params *tun) {
 void
 ipudp_list_tun_flush(ipudp_dev_priv *priv) {
 	ipudp_list_tun_item *p,*q;
-	//do I need XXX synchronize if device already removed?	
 	list_for_each_entry_safe(p, q, &(priv->list_tun), list) {
-		list_del_rcu(&(p->list));
-		synchronize_rcu();
+		list_del/*_rcu*/(&(p->list));
+		//synchronize_rcu();
 		kfree(p);
 	}
 
@@ -147,10 +146,10 @@ ipudp_list_tsa_flush(ipudp_dev_priv *priv) {
 	ipudp_list_tsa_item *p,*q;
 	
 	list_for_each_entry_safe(p, q, &(priv->list_tsa), list) {
-		list_del_rcu(&(p->list));
+		list_del/*_rcu*/(&(p->list));
 		sock_release(p->tsa.sock);
-		synchronize_rcu();
-                kfree(p);
+		//synchronize_rcu();
+        kfree(p);
 	}
 	priv->tsa_count = 0;
 	return;
@@ -168,8 +167,8 @@ __list_dev_flush(void) {
 	ipudp_dev *p,*q;
 
 	list_for_each_entry_safe(p, q, ipudp->viface_list, list) {
+		list_del(&(p->list));
 		unregister_netdev(p->dev);
-		list_del(&p->list);
 		kfree(p);
 	}
 }
@@ -179,7 +178,7 @@ ipudp_del_viface(ipudp_viface_params *p) {
 	ipudp_dev *viface; 
 	struct net_device *dev;
 
-//	spin_lock_bh(&ipudp_lock);
+	spin_lock_bh(&ipudp_lock);
 	list_for_each_entry(viface, ipudp->viface_list, list) {
 		if (!strcmp(p->name, viface->dev->name)) {
 			dev = viface->dev;
@@ -188,21 +187,19 @@ ipudp_del_viface(ipudp_viface_params *p) {
 	}
 
 	
-//	spin_unlock_bh(&ipudp_lock);
+	spin_unlock_bh(&ipudp_lock);
 	return IPUDP_ERR_DEV_NOT_FOUND;
 
 found:
-	unregister_netdev(dev);
-	spin_lock_bh(&ipudp_lock); //XXX
-	//XXX call clean priv data outside netdev_unregister XXX XXX XXX XXX XXX
 	list_del_rcu(&(viface->list));
-	spin_unlock_bh(&ipudp_lock);	
 	ipudp->viface_count--;
-
+	spin_unlock_bh(&ipudp_lock);	
 	synchronize_rcu();
-
-	//unregister_netdev(dev);
 	kfree(viface);
+	
+	unregister_netdev(dev);
+
+
 	return IPUDP_OK;
 
 }
@@ -975,11 +972,11 @@ static int __init ipudp_init(void) {
 	ipudp->nf_hook_ops_in = p;
 	
 	//IPv6 hook
-	//q = kzalloc(sizeof(struct nf_hook_ops), GFP_KERNEL);
-	//if ((err = ipudp_nf6_init(q)))
-	//	goto err_nf6_hook;
+	q = kzalloc(sizeof(struct nf_hook_ops), GFP_KERNEL);
+	if ((err = ipudp_nf6_init(q)))
+		goto err_nf6_hook;
 
-	//ipudp->nf_hook_ops_6_in = q;
+	ipudp->nf_hook_ops_6_in = q;
 
 	return 0;
 
@@ -996,6 +993,7 @@ static void __exit ipudp_fini(void) {
 
 	__list_dev_flush();
 	nf_unregister_hook(ipudp->nf_hook_ops_in);
+	nf_unregister_hook(ipudp->nf_hook_ops_6_in);
 	ipudp_genl_unregister();
 	kfree(ipudp->nf_hook_ops_in);
 	kfree(ipudp);
