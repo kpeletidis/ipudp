@@ -55,6 +55,7 @@ ipudp_ret_code{
 	IPUDP_ERR_TUN_REAL_DEV,		
 	IPUDP_ERR_TUN_BAD_PARAMS,
 	IPUDP_ERR_TUN_MAX,
+	IPUDP_ERR_TUN_NOT_FOUND,
 
 	IPUDP_ERR_TSA_SOCK_CREATE,	
 	IPUDP_ERR_TSA_SOCK_BIND,
@@ -293,6 +294,7 @@ struct list_head * ipudp_get_viface_list(void);
 int ipudp_get_viface_count(void);
 
 int ipudp_bind_tunnel(ipudp_viface_params *, ipudp_tun_params *);
+int ipudp_del_tun(ipudp_viface_params *, ipudp_tun_params *);
 ipudp_dev_priv * ipudp_get_priv(char *);
 
 /* ipudp_genl.c*/

@@ -333,6 +333,59 @@ do_cmd_add_viface(ipudp_viface_params *p){
 	return ret;
 }
 
+int 
+do_cmd_del_tun(ipudp_viface_params *q,ipudp_tun_params *p) {
+	struct nlattr *na;
+	int ret;
+	ipudp_nl_cmd_spec cmd_spec = CMD_S_TUN;
+	
+	/* fill the header */
+	req.n.nlmsg_len 	= NLMSG_LENGTH(GENL_HDRLEN);
+	req.n.nlmsg_type 	= ipudp_fam_id;
+	req.n.nlmsg_flags 	= NLM_F_REQUEST;
+	req.n.nlmsg_seq 	= 0;
+	req.n.nlmsg_pid 	= getpid();
+	req.g.cmd 			= IPUDP_C_DEL;
+
+
+	/* first attribute - cmd specification: TUN */
+	na = (struct nlattr *) GENLMSG_DATA(&req);
+	set_nl_attr(na, IPUDP_A_CMD_SPEC, &cmd_spec, sizeof(int));
+	req.n.nlmsg_len += NLMSG_ALIGN(na->nla_len);
+
+	/* second attribute - tun params */
+	na = (struct nlattr *) GENLMSG_NLA_NEXT(na);
+	set_nl_attr(na, IPUDP_A_TUN_PARAMS, p, sizeof(ipudp_tun_params));
+	req.n.nlmsg_len += NLMSG_ALIGN(na->nla_len);
+
+	/* third attribute - viface params */
+	na = (struct nlattr *) GENLMSG_NLA_NEXT(na);
+	set_nl_attr(na, IPUDP_A_VIFACE_PARAMS, q, sizeof(ipudp_viface_params));
+	req.n.nlmsg_len += NLMSG_ALIGN(na->nla_len);
+
+	/* send nl message */
+	if (sendto_fd(nl_sd, (char *) &req, req.n.nlmsg_len) < 0)  {
+		printf("ipudp_genl: error sending genl message\n");
+		return -1;
+	}
+
+	if ((receive_response()) < 0) {
+		printf("receive_response error!\n");
+		return -1;
+	}
+
+	parse_nl_attrs();
+	
+	if ((ret = *(int *)get_nl_data(IPUDP_A_RET_CODE)))	
+		printf("do_cmd_tun_viface: error code: %d\n",ret);
+	else {
+		//p = (ipudp_viface_params *) get_nl_data(IPUDP_A_TUN_PARAMS);
+		printf("tunnel %d for viface %s successfully removed\n", p->tid, q->name);
+	}
+
+	return 0;
+}
+
 
 int 
 do_cmd_del_viface(ipudp_viface_params *p){
@@ -348,7 +401,7 @@ do_cmd_del_viface(ipudp_viface_params *p){
 	req.n.nlmsg_flags 	= NLM_F_REQUEST;
 	req.n.nlmsg_seq 	= 0;
 	req.n.nlmsg_pid 	= getpid();
-	req.g.cmd 		= IPUDP_C_DEL;
+	req.g.cmd 			= IPUDP_C_DEL;
 
 	/* first attribute - cmd specification: DEV */
 	na = (struct nlattr *) GENLMSG_DATA(&req);

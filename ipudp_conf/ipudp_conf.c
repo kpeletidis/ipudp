@@ -22,17 +22,23 @@ void usage(){
 
 void usage_dev() {
 	printf(	"dev help:\n"
+		"add ipudp virtual interface:\n"
 		"ipudp_conf -a dev -N <dev_name> "
 		"-M <fixed|multiplexed> -P <v4|v6>\n"
+		"del ipudp virtual interface:\n"
+		"ipudp_conf -d dev -N <dev_name>\n"
 	);
 	exit(-1);
 }
 
 void usage_tun() {
 	printf( "tun help:\n"
+		"add ipudp tunnel:\n"
 		"ipudp_conf -a tun -N <viface_name> -T <mark>"
 		"-D <ip_dest> -S <ip_source> -L <locl_port> "
 		"-R <remote_port> -I <tun_id> -U <tun_real_dev>\n"
+		"del ipudp tunnel:\n"
+		"ipudp_conf -d tun -N <viface_name> -I <tun_id>\n"
 	);
 	exit(-1);
 }
@@ -57,7 +63,7 @@ main(int argc, char **argv){
 	u16 local_port = 0;
 	char *dest_addr = NULL;
 	u16 remote_port = 0;	
-	u32 tid = 0;
+	int tid = -1;
 	int c;
 
 
@@ -321,9 +327,32 @@ main(int argc, char **argv){
 				if (do_cmd_del_viface(&p) != 0)
 					printf("Error removing interface %s\n",viface_name);
 			}
-			else if (cmd_attr == TUN)
-				/*TODO*/;
+			else if (cmd_attr == TUN) {
+				ipudp_tun_params p;
+				ipudp_viface_params q;
+				
 
+				if (!viface_name){
+					printf("ipudp viface name must be specified\n");
+					usage_tun();
+				}
+				else {
+					memset(&q,0,sizeof(q));	
+					memset(q.name,0, MAX_IPUDP_DEV_NAME_LEN);
+					memcpy(q.name, viface_name, strlen(viface_name));
+				}
+			
+				if (tid < 0) {
+					printf("tunnel id must be specified\n");
+					usage_tun();
+				}	
+				else 
+					p.tid = tid;
+				
+				if (do_cmd_del_tun(&q, &p) != 0)
+					printf("Error removing tunnel %d for viface %s\n",tid, viface_name);
+			}
+				
 			break;
 
 		case IPUDP_C_LIST:

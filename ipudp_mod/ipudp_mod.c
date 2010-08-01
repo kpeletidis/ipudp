@@ -154,6 +154,37 @@ __list_dev_flush(void) {
 	}
 }
 
+int
+ipudp_del_tun(ipudp_viface_params *p, ipudp_tun_params *q) {
+	ipudp_dev *viface; 
+	ipudp_list_tun_item *item;
+	struct ipudp_dev_priv *priv = NULL;
+
+	spin_lock_bh(&ipudp_lock);
+	list_for_each_entry(viface, ipudp->viface_list, list) {
+		if (!strcmp(p->name, viface->dev->name)) {
+			priv = netdev_priv(viface->dev);
+
+			list_for_each_entry(item, &(priv->list_tun), list) {
+				if (q->tid == item->tun.tid) {
+					list_del_rcu(&(item->list));
+					priv->tun_count --;
+					spin_unlock_bh(&ipudp_lock);	
+					synchronize_rcu();
+					kfree(item);
+					return IPUDP_OK;
+				}
+			}
+			spin_unlock_bh(&ipudp_lock);	
+			return IPUDP_ERR_TUN_NOT_FOUND;
+		}
+	}
+	
+	spin_unlock_bh(&ipudp_lock);
+	return IPUDP_ERR_DEV_NOT_FOUND;
+
+}
+
 int 
 ipudp_del_viface(ipudp_viface_params *p) {			
 	ipudp_dev *viface; 

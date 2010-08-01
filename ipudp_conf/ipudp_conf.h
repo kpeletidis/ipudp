@@ -50,7 +50,7 @@ int do_cmd_add_viface(ipudp_viface_params *);
 int do_cmd_del_viface(ipudp_viface_params *);
 
 int do_cmd_add_tun(ipudp_viface_params *, ipudp_tun_params *);
-int do_cmd_del_tun(ipudp_tun_params *);
+int do_cmd_del_tun(ipudp_viface_params *, ipudp_tun_params *);
 
 int do_cmd_list(char *, ipudp_nl_cmd_spec);
 

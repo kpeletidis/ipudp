@@ -220,7 +220,7 @@ done:
 
 static int 
 ipudp_genl_do_del(struct sk_buff *skb, struct genl_info *info){
-	struct ipudp_nl_msg_attr attr[2];//ugly fixed number of attrs...
+	struct ipudp_nl_msg_attr attr[3];//ugly fixed number of attrs...
 	int n_attr = 0;
 	__u32 ret_code;
 	ipudp_nl_cmd_spec *cmd_spec;	
@@ -253,6 +253,35 @@ ipudp_genl_do_del(struct sk_buff *skb, struct genl_info *info){
 			set_msg_attr(&attr[n_attr], IPUDP_A_RET_CODE, &ret_code, 
 					sizeof(ret_code), 0, &n_attr);
 			set_msg_attr(&attr[n_attr], IPUDP_A_VIFACE_PARAMS, p, 
+					sizeof(*p), 0, &n_attr);
+		}
+		case CMD_S_TUN:
+		{
+			ipudp_tun_params *p =  NULL;
+			ipudp_viface_params *q = NULL;
+
+				printk("AHHA\n");
+			p = (ipudp_tun_params *)extract_nl_attr(info, IPUDP_A_TUN_PARAMS);
+			if (!p)	{	
+				ret_code = IPUDP_BAD_PARAMS;	
+				set_msg_attr(&attr[n_attr], IPUDP_A_RET_CODE, &ret_code, 
+						sizeof(ret_code), 0, &n_attr);
+				goto done;
+			}
+			
+			q = (ipudp_viface_params *)extract_nl_attr(info, IPUDP_A_VIFACE_PARAMS);
+			if (!q)	{	
+				ret_code = IPUDP_BAD_PARAMS;	
+				set_msg_attr(&attr[n_attr], IPUDP_A_RET_CODE, &ret_code, 
+						sizeof(ret_code), 0, &n_attr);
+				goto done;
+			}
+			
+			ret_code = ipudp_del_tun(q,p);
+	
+			set_msg_attr(&attr[n_attr], IPUDP_A_RET_CODE, &ret_code, 
+					sizeof(ret_code), 0, &n_attr);
+			set_msg_attr(&attr[n_attr], IPUDP_A_TUN_PARAMS, p, 
 					sizeof(*p), 0, &n_attr);
 		}
 		break;
