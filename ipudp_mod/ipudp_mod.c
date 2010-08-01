@@ -62,7 +62,7 @@ static ipudp_dev *
 __list_ipudp_dev_locate_by_name(char *name) {
 	ipudp_dev * p;
 
-	list_for_each_entry_rcu(p, ipudp->viface_list, list) {
+	list_for_each_entry(p, ipudp->viface_list, list) {
 		if (!strcmp(name, p->dev->name)) {
 			return p;
 		}
@@ -80,41 +80,6 @@ __list_dev_add(struct net_device * dev){
 	list_add_rcu(&(p->list), ipudp->viface_list);
 	ipudp->viface_count ++;	
 	spin_unlock_bh(&ipudp_lock);	
-}
-
-void 
-ipudp_list_tun_add(ipudp_dev_priv *p, ipudp_tun_params *tun){ 
-	ipudp_list_tun_item *item, *t;
-	
-	if((p->params.mode == MODE_FIXED) && (!(list_empty(&(p->list_tun))))) {
-		t = (ipudp_list_tun_item *)p->list_tun.next;
-		spin_lock_bh(&ipudp_lock);
-		list_del_rcu(&(t->list));
-		p->tun_count--;
-		spin_unlock_bh(&ipudp_lock);
-		synchronize_rcu();
-		kfree(t);
-	}
-
-	item = (ipudp_list_tun_item *)kmalloc(sizeof(*item), GFP_KERNEL);
-	memcpy(&(item->tun), tun, sizeof(*tun));
-
-	spin_lock_bh(&ipudp_lock);
-	list_add_rcu(&(item->list), &(p->list_tun));
-	p->tun_count++;
-	spin_unlock_bh(&ipudp_lock);
-}
-
-void 
-ipudp_list_tsa_add(ipudp_dev_priv *p, ipudp_tsa_params *tsa) {
-	ipudp_list_tsa_item *item;
-	
-	item = (ipudp_list_tsa_item *)kmalloc(sizeof(*item), GFP_KERNEL);
-	memcpy(&(item->tsa), tsa, sizeof(*tsa));
-	spin_lock_bh(&ipudp_lock);
-	list_add_rcu(&(item->list), &(p->list_tsa));
-	p->tsa_count ++;
-	spin_unlock_bh(&ipudp_lock);
 }
 
 void
@@ -143,13 +108,31 @@ ipudp_list_tsa_flush(ipudp_dev_priv *priv) {
 
 void 
 ipudp_list_tun_del(ipudp_dev_priv *p, ipudp_tun_params *tun) {
-	//TODO	
+	/*		
+		t = (ipudp_list_tun_item *)p->list_tun.next;
+		spin_lock_bh(&ipudp_lock);
+		list_del_rcu(&(t->list));
+		p->tun_count--;
+		spin_unlock_bh(&ipudp_lock);
+		synchronize_rcu();
+		kfree(t);
+	}
+	*/
 	return;
 }
 
 void 
 ipudp_list_tsa_del(ipudp_dev_priv *p, ipudp_tsa_params *tsa) {
-	//TODO	
+	/* TODO
+		ipudp_list_tsa_item * t;
+
+		spin_lock_bh(&ipudp_lock);
+		list_del_rcu(&(t->list));
+		spin_unlock_bh(&ipudp_lock);
+		synchronize_rcu();
+		kfree(t);
+	}
+	*/
 	return;
 }
 
@@ -617,11 +600,13 @@ __ipudp_init_priv_data(ipudp_dev_priv *p) {
 				ret = IPUDP_BAD_PARAMS;
 				goto done;
 			}
+
+			p->max_tun = 1;
+			p->max_tsa = 1;
 			break;
 		default:
 			ret = IPUDP_BAD_PARAMS;
 			goto done;
-			break;
 	}
 	//init tun list
 	p->list_tun.prev = &p->list_tun;
@@ -629,9 +614,6 @@ __ipudp_init_priv_data(ipudp_dev_priv *p) {
 	//init tsa list
 	p->list_tsa.prev = &p->list_tsa;
 	p->list_tsa.next = &p->list_tsa;
-
-	p->max_tun = IPUDP_CONF_MAX_TUN;
-	p->max_tsa = IPUDP_CONF_MAX_TSA;
 
 	return IPUDP_OK;
 
@@ -810,33 +792,17 @@ __ipudp_create_and_add_tsa(ipudp_dev_priv *p, ipudp_tun_params *tun) {
 
 	if ((ret = __tsa_reserve_port(tun, &tsa)))
 		return ret;
-	
-	if((p->params.mode == MODE_FIXED) && (!(list_empty(&(p->list_tsa))))) {
-		t = (ipudp_list_tsa_item *)p->list_tsa.next;
-		spin_lock_bh(&ipudp_lock);
-		list_del_rcu(&(t->list));
-		spin_unlock_bh(&ipudp_lock);
-		synchronize_rcu();
-		kfree(t);
-	}
 
-	ipudp_list_tsa_add(p, &tsa);
+	t = (ipudp_list_tsa_item *)kmalloc(sizeof(*t), GFP_ATOMIC);
+	memcpy(&(t->tsa), &tsa, sizeof(tsa));
+
+	list_add_rcu(&(t->list), &(p->list_tsa));
+	p->tsa_count ++;
 
 	return IPUDP_OK;
 }
 
-int 
-ipudp_del_tsa(ipudp_tsa_params *tsa) {
-	/*	ipudp_tsa_item *p,*q;
-	
-	for_each_entry_safe();
-	listdel(p)
-	kfree(p->sock)
-	kfree(p)
-	*/	
-	return 0;
-}
-
+#if 0
 int
 ipudp_bind_tunnel(ipudp_viface_params *p, ipudp_tun_params *tun) {
 	int ret;
@@ -886,6 +852,64 @@ ipudp_bind_tunnel(ipudp_viface_params *p, ipudp_tun_params *tun) {
 	return IPUDP_OK;
 	
 err_ret:
+	rcu_read_unlock();
+	return ret;
+}
+#endif
+
+int
+ipudp_bind_tunnel(ipudp_viface_params *p, ipudp_tun_params *tun) {
+	int ret;
+	ipudp_dev *viface;
+	ipudp_list_tun_item *item;
+	struct ipudp_dev_priv *priv;
+
+	item = (ipudp_list_tun_item *)kmalloc(sizeof(*item), GFP_ATOMIC);
+	memcpy(&(item->tun), tun, sizeof(*tun));
+	
+	spin_lock_bh(&ipudp_lock);
+	viface =__list_ipudp_dev_locate_by_name(p->name);
+
+	if (!viface) {
+		ret = IPUDP_ERR_DEV_NOT_FOUND;
+		goto err_ret;
+	}
+	priv = (ipudp_dev_priv *)netdev_priv(viface->dev);	
+
+	if (priv->tun_count == priv->max_tun) {	
+		ret = IPUDP_ERR_TUN_MAX;
+		goto err_ret;
+	}
+
+	//TODO
+	if (priv->params.mode != MODE_FIXED) {
+		//tun->tid = __get_new_tid(&(priv->list_tun));TODO
+		ret = IPUDP_ERR_TUN_BAD_PARAMS;
+		goto err_ret;
+	}	
+	
+	if(  (( __tun_src_is_null(tun)) && (!(tun->dev_idx)))
+		|| __tun_dst_is_null(tun) || (!(tun->destport)) 
+						|| (!(tun->srcport)) )
+	{
+		ret = IPUDP_ERR_TUN_BAD_PARAMS;
+		goto err_ret;
+	}
+
+	/* reserve listening port and add tsa to list */
+	if ((ret = __ipudp_create_and_add_tsa(priv, tun))) 
+		goto err_ret;
+
+	/* add tunnel to list */
+	list_add_rcu(&(item->list), &(priv->list_tun));
+	priv->tun_count++;
+
+	spin_unlock_bh(&ipudp_lock);
+
+	return IPUDP_OK;
+	
+err_ret:
+	spin_unlock_bh(&ipudp_lock);
 	return ret;
 }
 
