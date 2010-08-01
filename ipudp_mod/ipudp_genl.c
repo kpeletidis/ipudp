@@ -249,11 +249,12 @@ ipudp_genl_do_del(struct sk_buff *skb, struct genl_info *info){
 		
 
 			ret_code = ipudp_del_viface(p);
-	
+
 			set_msg_attr(&attr[n_attr], IPUDP_A_RET_CODE, &ret_code, 
 					sizeof(ret_code), 0, &n_attr);
 			set_msg_attr(&attr[n_attr], IPUDP_A_VIFACE_PARAMS, p, 
 					sizeof(*p), 0, &n_attr);
+			break;
 		}
 		case CMD_S_TUN:
 		{
@@ -282,18 +283,18 @@ ipudp_genl_do_del(struct sk_buff *skb, struct genl_info *info){
 					sizeof(ret_code), 0, &n_attr);
 			set_msg_attr(&attr[n_attr], IPUDP_A_TUN_PARAMS, p, 
 					sizeof(*p), 0, &n_attr);
+			break;
 		}
-		break;
-		default:
+		default: {
 			ret_code = IPUDP_BAD_CMD_SPEC;	
 			set_msg_attr(&attr[n_attr], IPUDP_A_RET_CODE, &ret_code, 
 					sizeof(ret_code), 0, &n_attr);
 			goto done;
-		break;
-	
+		}
 	}
 		
 done:
+	printk("nattr %d\n", n_attr);
 	return send_nl_msg(IPUDP_C_DEL, n_attr, MSG_REPLY, attr, info);
 }
 

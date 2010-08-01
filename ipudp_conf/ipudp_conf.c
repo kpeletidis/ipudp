@@ -224,7 +224,7 @@ main(int argc, char **argv){
 				}
 				tun_params.af = ip_vers;
 
-				//parse tun  source address
+				//parse tun source address
 				if (src_addr) {
 					if (ip_vers == IPV4){	
 						if (inet_pton(AF_INET, src_addr, saddr_bin) <= 0) {
@@ -255,7 +255,7 @@ main(int argc, char **argv){
 					tun_params.dev_idx = iface_idx;
 				}
 
-			//parse tun  source address
+				//parse dest source address
 				if (dest_addr) {
 					if (ip_vers == IPV4){	
 						if (inet_pton(AF_INET, dest_addr, daddr_bin) <= 0) {
@@ -293,7 +293,10 @@ main(int argc, char **argv){
 				}
 				if (mark)		
 					tun_params.mark = mark;
-				//if (tid) tun_params.tid = tid;
+				if (tid < 0) 
+					tun_params.tid = 0;
+				else 
+					tun_params.tid = tid;
 				
 				if (do_cmd_add_tun(&viface_params, &tun_params) != 0)
 					printf("Error adding tunnel to iface %s\n", viface_params.name); 

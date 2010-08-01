@@ -210,9 +210,7 @@ found:
 	
 	unregister_netdev(dev);
 
-
 	return IPUDP_OK;
-
 }
 
 unsigned int 

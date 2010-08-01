@@ -428,10 +428,6 @@ do_cmd_del_viface(ipudp_viface_params *p){
 	
 	if ((ret = *(int *)get_nl_data(IPUDP_A_RET_CODE))) {	
 		printf("do_cmd_del_viface: error code: %d\n",ret);
-	
-		//XXX	
-		if ((error_desc = (char *)  get_nl_data(IPUDP_A_ERROR_DESC)))
-			printf("%s\n",error_desc);
 	}
 	else {
 		p = (ipudp_viface_params *) get_nl_data(IPUDP_A_VIFACE_PARAMS);
