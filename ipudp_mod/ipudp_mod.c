@@ -632,8 +632,9 @@ __ipudp_init_priv_data(ipudp_dev_priv *p) {
 				goto done;
 			}
 
-			p->max_tun = 1;
-			p->max_tsa = 1;
+			//XXX put to 1
+			p->max_tun = 4;
+			p->max_tsa = 4;
 			break;
 		default:
 			ret = IPUDP_BAD_PARAMS;
@@ -718,10 +719,8 @@ __tun_dst_is_null(ipudp_tun_params *p) {
 	return __tun_addr_is_null(len, addr);
 }
 
-/* reserve listening port if it is given otherwise 
-pick a free port and reserve it*/
 static int 
-__tsa_reserve_port(ipudp_tun_params *p, ipudp_tsa_params *tsa){
+__tsa_set_and_reserve_port(ipudp_tun_params *p, ipudp_tsa_params *tsa){
 	struct socket *sock;
 	int err = IPUDP_OK;
 	struct net_device * dev = NULL;
@@ -743,14 +742,13 @@ __tsa_reserve_port(ipudp_tun_params *p, ipudp_tsa_params *tsa){
 
 			addr_ptr = &addr;
 			addr_len = sizeof(addr);
-			//XXX TODO check if tsa already in the list
-
+	
 			memset(&addr, 0, sizeof(struct sockaddr));
 			addr.sin_family = AF_INET;
 			addr.sin_addr.s_addr = p->u.v4p.src; //XXX if 0 --> add_any
 			addr.sin_port = p->srcport;
 		
-			if (sock_create(addr.sin_family, SOCK_DGRAM, 
+			if (sock_create_kern(addr.sin_family, SOCK_DGRAM, 
 						IPPROTO_UDP, &sock) < 0) {
 				err = IPUDP_ERR_TSA_SOCK_CREATE;
 				goto err_return;
@@ -765,7 +763,6 @@ __tsa_reserve_port(ipudp_tun_params *p, ipudp_tsa_params *tsa){
 
 			addr_ptr = &addr;
 			addr_len = sizeof(addr);
-			//XXX TODO check if tsa already in the list
 		
 			memset(&addr, 0, sizeof(struct sockaddr_in6));
 			addr.sin6_family = AF_INET6;
@@ -773,7 +770,7 @@ __tsa_reserve_port(ipudp_tun_params *p, ipudp_tsa_params *tsa){
 					sizeof(struct in6_addr)); //XXX if all 0 --> addr_any
 			addr.sin6_port = p->srcport;
 		
-			if (sock_create(addr.sin6_family, SOCK_DGRAM, 
+			if (sock_create_kern(addr.sin6_family, SOCK_DGRAM, 
 						IPPROTO_UDP, &sock) < 0) {
 				err = IPUDP_ERR_TSA_SOCK_CREATE;
 				goto err_return;
@@ -792,11 +789,7 @@ __tsa_reserve_port(ipudp_tun_params *p, ipudp_tsa_params *tsa){
 		err = IPUDP_ERR_TSA_SOCK_BIND;
 		goto err_free_sock;
 	}
-	//XXX TODO check if the bind failed because already bound
-	//by another tunnel - should be enough to check if the TSA
-	//is already in the list (above). if TSA is already bound 
-	//for the same iface, no problem. 
-	
+
 	tsa->sock = sock;
 	tsa->af = p->af;
 	tsa->port = p->srcport; 
@@ -809,6 +802,27 @@ err_return:
 	return err;	
 }
 
+static int 
+__tsa_already_in_list(ipudp_dev_priv *p, ipudp_tun_params *tun) {
+	ipudp_list_tsa_item *t;
+	
+	list_for_each_entry(t, &(p->list_tsa), list) {
+		if (t->tsa.af == IPV4) {
+			if (  (t->tsa.u.v4addr == tun->u.v4p.src) &&
+						(t->tsa.dev_idx == tun->dev_idx) &&
+								(t->tsa.port == tun->srcport) )	
+
+				return 1;
+		}
+		else {
+			if (  !memcmp(t->tsa.u.v6addr,tun->u.v6p.src,16) &&
+							(t->tsa.dev_idx == tun->dev_idx) &&
+									(t->tsa.port == tun->srcport) )	
+				return 1;
+		}
+	}
+	return 0;
+}
 
 static int 
 __ipudp_create_and_add_tsa(ipudp_dev_priv *p, ipudp_tun_params *tun) {
@@ -817,76 +831,29 @@ __ipudp_create_and_add_tsa(ipudp_dev_priv *p, ipudp_tun_params *tun) {
 	ipudp_list_tsa_item *t;
 
 	memset(&tsa,0,sizeof(tsa));
-	
+
+	//check if tsa already in the list
+	if (__tsa_already_in_list(p, tun)) {
+		printk("TSA IN\n");
+		goto done;
+	}
+
 	if (p->tsa_count == p->max_tsa)	
 		return IPUDP_ERR_TSA_MAX;
 
-	if ((ret = __tsa_reserve_port(tun, &tsa)))
+	if ((ret = __tsa_set_and_reserve_port(tun, &tsa)))
 		return ret;
 
 	t = (ipudp_list_tsa_item *)kmalloc(sizeof(*t), GFP_ATOMIC);
 	memcpy(&(t->tsa), &tsa, sizeof(tsa));
 
+
 	list_add_rcu(&(t->list), &(p->list_tsa));
 	p->tsa_count ++;
 
+done:
 	return IPUDP_OK;
 }
-
-#if 0
-int
-ipudp_bind_tunnel(ipudp_viface_params *p, ipudp_tun_params *tun) {
-	int ret;
-	ipudp_dev *viface;
-	struct ipudp_dev_priv *priv;
-	struct net_device *dev;
-
-	rcu_read_lock();
-	viface =__list_ipudp_dev_locate_by_name(p->name);
-	if (!viface) {
-		ret = IPUDP_ERR_DEV_NOT_FOUND;
-		rcu_read_unlock();
-		goto err_ret;
-	}
-	dev = rcu_dereference(viface->dev);
-
-	priv = (ipudp_dev_priv *)netdev_priv(dev);	
-
-	if (priv->tun_count == priv->max_tun) {	
-		ret = IPUDP_ERR_TUN_MAX;
-		goto err_ret;
-	}
-
-	//TODO
-	if (priv->params.mode != MODE_FIXED) {
-		//tun->tid = __get_new_tid(&(priv->list_tun));TODO
-		ret = IPUDP_ERR_TUN_BAD_PARAMS;
-		goto err_ret;
-	}	
-	rcu_read_unlock();
-	
-	if(  (( __tun_src_is_null(tun)) && (!(tun->dev_idx)))
-		|| __tun_dst_is_null(tun) || (!(tun->destport)) 
-						|| (!(tun->srcport)) )
-	{
-		ret = IPUDP_ERR_TUN_BAD_PARAMS;
-		goto err_ret;
-	}
-
-	/* reserve listening port and add tsa to list */
-	if ((ret = __ipudp_create_and_add_tsa(priv, tun))) 
-		goto err_ret;
-
-	/* add tunnel to list */
-	ipudp_list_tun_add(priv, tun);
-
-	return IPUDP_OK;
-	
-err_ret:
-	rcu_read_unlock();
-	return ret;
-}
-#endif
 
 int
 ipudp_bind_tunnel(ipudp_viface_params *p, ipudp_tun_params *tun) {
@@ -899,6 +866,7 @@ ipudp_bind_tunnel(ipudp_viface_params *p, ipudp_tun_params *tun) {
 	memcpy(&(item->tun), tun, sizeof(*tun));
 	
 	spin_lock_bh(&ipudp_lock);
+
 	viface =__list_ipudp_dev_locate_by_name(p->name);
 
 	if (!viface) {
@@ -927,6 +895,7 @@ ipudp_bind_tunnel(ipudp_viface_params *p, ipudp_tun_params *tun) {
 		goto err_ret;
 	}
 
+	
 	/* reserve listening port and add tsa to list */
 	if ((ret = __ipudp_create_and_add_tsa(priv, tun))) 
 		goto err_ret;

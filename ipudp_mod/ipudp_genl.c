@@ -260,7 +260,6 @@ ipudp_genl_do_del(struct sk_buff *skb, struct genl_info *info){
 			ipudp_tun_params *p =  NULL;
 			ipudp_viface_params *q = NULL;
 
-				printk("AHHA\n");
 			p = (ipudp_tun_params *)extract_nl_attr(info, IPUDP_A_TUN_PARAMS);
 			if (!p)	{	
 				ret_code = IPUDP_BAD_PARAMS;	
