@@ -241,7 +241,7 @@ _ipudp_tsa_params{
 	} u;
 	__u16 port;
 	struct socket *sock;
-	__u32 id;
+	unsigned long ino; //this can be considered the unique id for the tsa
 }ipudp_tsa_params;
 
 typedef struct
@@ -299,6 +299,7 @@ int ipudp_bind_tunnel(ipudp_viface_params *, ipudp_tun_params *);
 int ipudp_del_tun(ipudp_viface_params *, ipudp_tun_params *);
 ipudp_dev_priv * ipudp_get_priv(char *);
 
+int ipudp_del_tsa(ipudp_viface_params *, ipudp_tsa_params *);
 /* ipudp_genl.c*/
 int ipudp_genl_register(void);
 void ipudp_genl_unregister(void);

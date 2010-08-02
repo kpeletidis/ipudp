@@ -334,6 +334,58 @@ do_cmd_add_viface(ipudp_viface_params *p){
 }
 
 int 
+do_cmd_del_tsa(ipudp_viface_params *q,ipudp_tsa_params *p) {
+	struct nlattr *na;
+	int ret;
+	ipudp_nl_cmd_spec cmd_spec = CMD_S_TSA;
+	
+	/* fill the header */
+	req.n.nlmsg_len 	= NLMSG_LENGTH(GENL_HDRLEN);
+	req.n.nlmsg_type 	= ipudp_fam_id;
+	req.n.nlmsg_flags 	= NLM_F_REQUEST;
+	req.n.nlmsg_seq 	= 0;
+	req.n.nlmsg_pid 	= getpid();
+	req.g.cmd 			= IPUDP_C_DEL;
+
+
+	/* first attribute - cmd specification: TSA */
+	na = (struct nlattr *) GENLMSG_DATA(&req);
+	set_nl_attr(na, IPUDP_A_CMD_SPEC, &cmd_spec, sizeof(int));
+	req.n.nlmsg_len += NLMSG_ALIGN(na->nla_len);
+
+	/* second attribute - tsa params */
+	na = (struct nlattr *) GENLMSG_NLA_NEXT(na);
+	set_nl_attr(na, IPUDP_A_TSA_PARAMS, p, sizeof(ipudp_tsa_params));
+	req.n.nlmsg_len += NLMSG_ALIGN(na->nla_len);
+
+	/* third attribute - viface params */
+	na = (struct nlattr *) GENLMSG_NLA_NEXT(na);
+	set_nl_attr(na, IPUDP_A_VIFACE_PARAMS, q, sizeof(ipudp_viface_params));
+	req.n.nlmsg_len += NLMSG_ALIGN(na->nla_len);
+
+	/* send nl message */
+	if (sendto_fd(nl_sd, (char *) &req, req.n.nlmsg_len) < 0)  {
+		printf("ipudp_genl: error sending genl message\n");
+		return -1;
+	}
+
+	if ((receive_response()) < 0) {
+		printf("receive_response error!\n");
+		return -1;
+	}
+
+	parse_nl_attrs();
+	
+	if ((ret = *(int *)get_nl_data(IPUDP_A_RET_CODE)))	
+		printf("do_cmd_del_tsa: error code: %d\n",ret);
+	else {
+		printf("tsa %ld for viface %s successfully removed\n", p->ino, q->name);
+	}
+
+	return 0;
+}
+
+int 
 do_cmd_del_tun(ipudp_viface_params *q,ipudp_tun_params *p) {
 	struct nlattr *na;
 	int ret;
@@ -377,7 +429,7 @@ do_cmd_del_tun(ipudp_viface_params *q,ipudp_tun_params *p) {
 	parse_nl_attrs();
 	
 	if ((ret = *(int *)get_nl_data(IPUDP_A_RET_CODE)))	
-		printf("do_cmd_tun_viface: error code: %d\n",ret);
+		printf("do_cmd_del_tun: error code: %d\n",ret);
 	else {
 		//p = (ipudp_viface_params *) get_nl_data(IPUDP_A_TUN_PARAMS);
 		printf("tunnel %d for viface %s successfully removed\n", p->tid, q->name);
@@ -393,7 +445,6 @@ do_cmd_del_viface(ipudp_viface_params *p){
 	//struct sockaddr_nl nladdr;
 	int ret;
 	ipudp_nl_cmd_spec cmd_spec = CMD_S_VIFACE;
-	char *error_desc = NULL;
 	
 	/* fill the header */
 	req.n.nlmsg_len 	= NLMSG_LENGTH(GENL_HDRLEN);
@@ -521,6 +572,50 @@ __print_tun_params(ipudp_tun_params * data) {
 }
 
 static void 
+__print_tsa_params(ipudp_tsa_params * data) {
+	char ip_src[64];
+	char ip_dest[64];
+	char temp[64];
+	char ifname[IFNAMSIZ];
+
+	memset(ip_src, 0, 64);
+	memset(ip_dest, 0, 64);
+	memset(temp, 0, 64);
+	memset(ifname, 0, IFNAMSIZ);
+
+	if (data->af == IPV4) {
+		if (!data->dev_idx)
+			inet_ntop(AF_INET, &(data->u.v4addr), ip_src, 64);
+	}
+	else if (data->af == IPV6) {
+		if (!data->dev_idx)
+			inet_ntop(AF_INET, &(data->u.v6addr), ip_src, 64);
+	}
+	else {
+		printf("unknown outer af family\n");
+		return;
+	}
+
+	if (data->dev_idx) {
+		if (get_iface_name_by_idx(data->dev_idx, ifname) < 0) {
+			sprintf(temp,"underlying device index %d", data->dev_idx);
+			printf("warning: error getting iface name from index. Are you root?\n");
+		}
+		else 	
+			sprintf(temp,"underlying device %s", ifname);
+	}
+	else
+		sprintf(temp,"source IP address %s", ip_src);
+
+	printf("\ttsa: socket fd %ld, %s, source UDP port %d, device idx %d\n",
+			data->ino, temp, ntohs(data->port), data->dev_idx);
+
+	return;
+
+}
+
+
+static void 
 __print_list_attr(ipudp_nl_cmd_spec cmd_spec, void *data) {
 
 	switch(cmd_spec) {
@@ -531,7 +626,7 @@ __print_list_attr(ipudp_nl_cmd_spec cmd_spec, void *data) {
 			__print_tun_params((ipudp_tun_params *)data);
 			break;
 		case CMD_S_TSA:
-			/*TODO*/
+			__print_tsa_params((ipudp_tsa_params *)data);
 			break;
 		case CMD_S_RULE:
 			/*TODO*/
@@ -611,7 +706,6 @@ int do_cmd_list(char *viface_name, ipudp_nl_cmd_spec cmd_spec) {
 
 	memset(&p,0,sizeof(p));
 	
-	//TODO iface idx from name
 	if (viface_name) 
 		memcpy(&p.dev_name,viface_name, strlen(viface_name));
 

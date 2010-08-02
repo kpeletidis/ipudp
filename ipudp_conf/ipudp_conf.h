@@ -54,6 +54,7 @@ int do_cmd_del_tun(ipudp_viface_params *, ipudp_tun_params *);
 
 int do_cmd_list(char *, ipudp_nl_cmd_spec);
 
+int do_cmd_del_tsa(ipudp_viface_params *, ipudp_tsa_params *);
 
 /* utlis */
 int get_iface_idx_by_name(char *);

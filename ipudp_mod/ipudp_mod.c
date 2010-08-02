@@ -106,24 +106,38 @@ ipudp_list_tsa_flush(ipudp_dev_priv *priv) {
 	return;
 }
 
-void 
-ipudp_list_tsa_del(ipudp_dev_priv *p, ipudp_tsa_params *tsa) {
-	/* TODO
-		ipudp_list_tsa_item * t;
-
-		spin_lock_bh(&ipudp_lock);
-		list_del_rcu(&(t->list));
-		spin_unlock_bh(&ipudp_lock);
-		synchronize_rcu();
-		kfree(t);
-	}
-	*/
-	return;
-}
-
+//delete tsa by inode number for the associated socket
 int 
-ipudp_del_tsa(ipudp_viface_params *viface, ipudp_tsa_params *tsa){
-	//XXX TODO XXX
+ipudp_del_tsa(ipudp_viface_params *p, ipudp_tsa_params *q){
+	ipudp_dev *viface; 
+	ipudp_list_tsa_item *item;
+	struct ipudp_dev_priv *priv = NULL;
+
+	spin_lock_bh(&ipudp_lock);
+	list_for_each_entry(viface, ipudp->viface_list, list) {
+		if (!strcmp(p->name, viface->dev->name)) {
+			priv = netdev_priv(viface->dev);
+
+			list_for_each_entry(item, &(priv->list_tsa), list) {
+				if (q->ino == item->tsa.ino) {
+					list_del_rcu(&(item->list));
+					priv->tsa_count --;
+					spin_unlock_bh(&ipudp_lock);	
+					synchronize_rcu();
+					sock_release(item->tsa.sock);
+					kfree(item);
+					return IPUDP_OK;
+				}
+			}
+			spin_unlock_bh(&ipudp_lock);	
+			return IPUDP_ERR_TUN_NOT_FOUND;
+		}
+	}
+	
+	spin_unlock_bh(&ipudp_lock);
+	return IPUDP_ERR_DEV_NOT_FOUND;
+
+
 	return IPUDP_OK;
 }
 
@@ -707,7 +721,8 @@ __tsa_set_and_reserve_port(ipudp_tun_params *p, ipudp_tsa_params *tsa){
 	struct net_device * dev = NULL;
 	int addr_len;
 	void *addr_ptr = NULL;
-
+	struct inode *inode ;	
+	
 	if (p->dev_idx) {
 		tsa->dev_idx = p->dev_idx;
 		dev = dev_get_by_index(&init_net, p->dev_idx);
@@ -774,6 +789,10 @@ __tsa_set_and_reserve_port(ipudp_tun_params *p, ipudp_tsa_params *tsa){
 	tsa->sock = sock;
 	tsa->af = p->af;
 	tsa->port = p->srcport; 
+
+	//XXX
+	inode = SOCK_INODE(sock);
+	tsa->ino = inode->i_ino;
 
 	return IPUDP_OK;
 

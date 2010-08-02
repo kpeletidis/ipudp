@@ -43,6 +43,17 @@ void usage_tun() {
 	exit(-1);
 }
 
+void usage_tsa() {
+	printf( "tun help:\n"
+		"add ipudp tsa:\n"
+		"ipudp_conf -d tsa -N <viface_name> -K <inode>"
+		"-D <ip_dest> -S <ip_source> -L <locl_port> "
+		"-R <remote_port> -I <tun_id> -U <tun_real_dev>\n"
+		"del ipudp tunnel:\n"
+		"ipudp_conf -d tun -N <viface_name> -I <tun_id>\n"
+	);
+	exit(-1);
+}
 void usage_list() {
 	printf( "list help:\n"
 		"ipudp_conf -l <type> [-N <dev_name>] \n"
@@ -64,11 +75,12 @@ main(int argc, char **argv){
 	char *dest_addr = NULL;
 	u16 remote_port = 0;	
 	int tid = -1;
+	unsigned long inode = 0;
 	int c;
 
 
 
-	while((c = getopt(argc, argv, "a:d:s:l:iR:L:S:D:N:U:M:T:P:I:"))!= -1) {
+	while((c = getopt(argc, argv, "a:d:s:l:iR:L:S:D:N:U:M:T:P:I:K:"))!= -1) {
 		switch (c) {
 			case 'i': //debug XXX to be removed
 				cmd = IPUDP_C_MODULE_TEST;
@@ -161,6 +173,9 @@ main(int argc, char **argv){
 				break;
 			case 'I':
 				tid = (u32)atoi(optarg);
+				break;
+			case 'K':
+				inode = (unsigned long)atol(optarg);
 				break;	
 			default:
 				usage();
@@ -306,8 +321,30 @@ main(int argc, char **argv){
 		case IPUDP_C_DEL:
 			if (cmd_attr == RULE)
 				/*TODO*/;			
-			else if (cmd_attr == TSA)
-				/*TODO*/;
+			else if (cmd_attr == TSA){
+				ipudp_tsa_params p;
+				ipudp_viface_params q;
+
+				if (!viface_name){
+					printf("ipudp viface name must be specified\n");
+					usage_tsa();
+				}
+				else {
+					memset(&q,0,sizeof(q));	
+					memset(q.name,0, MAX_IPUDP_DEV_NAME_LEN);
+					memcpy(q.name, viface_name, strlen(viface_name));
+				}
+			
+				if (!inode) {
+					printf("inode number must be specified\n");
+					usage_tsa();
+				}	
+				else 
+					p.ino = inode;
+				
+				if (do_cmd_del_tsa(&q, &p) != 0)
+					printf("Error removing tsa %ld for viface %s\n",inode, viface_name);
+			}
 			else if (cmd_attr == VIFACE){
 					
 				ipudp_viface_params p;
@@ -369,10 +406,6 @@ main(int argc, char **argv){
 
 			if (do_cmd_list(viface_name, cmd_attr) != 0)
 					printf("Error getting list\n");
-			break;	
-
-		case IPUDP_C_MODULE_TEST:
-			do_cmd_module_test();
 			break;	
 
 		default:

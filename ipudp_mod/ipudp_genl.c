@@ -285,6 +285,35 @@ ipudp_genl_do_del(struct sk_buff *skb, struct genl_info *info){
 					sizeof(*p), 0, &n_attr);
 			break;
 		}
+		case CMD_S_TSA:
+		{
+			ipudp_tsa_params *p =  NULL;
+			ipudp_viface_params *q = NULL;
+
+			p = (ipudp_tsa_params *)extract_nl_attr(info, IPUDP_A_TSA_PARAMS);
+			if (!p)	{	
+				ret_code = IPUDP_BAD_PARAMS;	
+				set_msg_attr(&attr[n_attr], IPUDP_A_RET_CODE, &ret_code, 
+						sizeof(ret_code), 0, &n_attr);
+				goto done;
+			}
+			
+			q = (ipudp_viface_params *)extract_nl_attr(info, IPUDP_A_VIFACE_PARAMS);
+			if (!q)	{	
+				ret_code = IPUDP_BAD_PARAMS;	
+				set_msg_attr(&attr[n_attr], IPUDP_A_RET_CODE, &ret_code, 
+						sizeof(ret_code), 0, &n_attr);
+				goto done;
+			}
+			
+			ret_code = ipudp_del_tsa(q,p);
+	
+			set_msg_attr(&attr[n_attr], IPUDP_A_RET_CODE, &ret_code, 
+					sizeof(ret_code), 0, &n_attr);
+			set_msg_attr(&attr[n_attr], IPUDP_A_TSA_PARAMS, p, 
+					sizeof(*p), 0, &n_attr);
+			break;
+		}
 		default: {
 			ret_code = IPUDP_BAD_CMD_SPEC;	
 			set_msg_attr(&attr[n_attr], IPUDP_A_RET_CODE, &ret_code, 
@@ -366,7 +395,7 @@ ipudp_genl_do_list(struct sk_buff *skb, struct genl_info *info){
 			listp = &(priv->list_tun);
 			list_params->n_items = priv->tun_count;
 	
-			attr = kmalloc(sizeof(*attr) * (list_params->n_items + 2), GFP_KERNEL);
+			attr = kmalloc(sizeof(*attr) * (list_params->n_items + 2), GFP_ATOMIC);
 			
 			ret_code = IPUDP_OK;
 			set_msg_attr(&attr[n_attr], IPUDP_A_RET_CODE, 
@@ -387,7 +416,41 @@ ipudp_genl_do_list(struct sk_buff *skb, struct genl_info *info){
 
 		case CMD_S_TSA:
 		{
-			//TODO
+			ipudp_list_tsa_item *t;
+			ipudp_dev_priv *priv = NULL;
+			
+			rcu_read_lock();
+			priv = ipudp_get_priv(list_params->dev_name);
+			
+			if (!priv) {
+				ret_code = IPUDP_ERR_DEV_NOT_FOUND;	
+				attr = kmalloc(sizeof(*attr), GFP_KERNEL);
+				set_msg_attr(&attr[n_attr], IPUDP_A_RET_CODE, &ret_code, 
+					sizeof(ret_code), 0, &n_attr);
+				rcu_read_unlock();
+				goto done;
+			}
+				
+			listp = &(priv->list_tsa);
+			list_params->n_items = priv->tsa_count;
+	
+			attr = kmalloc(sizeof(*attr) * (list_params->n_items + 2), GFP_ATOMIC);
+			
+			ret_code = IPUDP_OK;
+			set_msg_attr(&attr[n_attr], IPUDP_A_RET_CODE, 
+				&ret_code, sizeof(ret_code), 0, &n_attr);
+			set_msg_attr(&attr[n_attr], IPUDP_A_LIST_PARAMS, 
+				list_params, sizeof(*list_params), 0, &n_attr);	
+			
+				
+			list_for_each_entry(t, listp, list) {
+				set_msg_attr(&attr[n_attr], IPUDP_A_TSA_PARAMS, &(t->tsa), 
+							sizeof(t->tsa), 0, &n_attr);
+			}
+	
+			rcu_read_unlock();
+
+			break;
 		}
 		case CMD_S_RULE:
 		{ 
