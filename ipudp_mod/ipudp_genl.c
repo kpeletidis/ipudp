@@ -294,7 +294,6 @@ ipudp_genl_do_del(struct sk_buff *skb, struct genl_info *info){
 	}
 		
 done:
-	printk("nattr %d\n", n_attr);
 	return send_nl_msg(IPUDP_C_DEL, n_attr, MSG_REPLY, attr, info);
 }
 

@@ -107,21 +107,6 @@ ipudp_list_tsa_flush(ipudp_dev_priv *priv) {
 }
 
 void 
-ipudp_list_tun_del(ipudp_dev_priv *p, ipudp_tun_params *tun) {
-	/*		
-		t = (ipudp_list_tun_item *)p->list_tun.next;
-		spin_lock_bh(&ipudp_lock);
-		list_del_rcu(&(t->list));
-		p->tun_count--;
-		spin_unlock_bh(&ipudp_lock);
-		synchronize_rcu();
-		kfree(t);
-	}
-	*/
-	return;
-}
-
-void 
 ipudp_list_tsa_del(ipudp_dev_priv *p, ipudp_tsa_params *tsa) {
 	/* TODO
 		ipudp_list_tsa_item * t;
@@ -134,6 +119,18 @@ ipudp_list_tsa_del(ipudp_dev_priv *p, ipudp_tsa_params *tsa) {
 	}
 	*/
 	return;
+}
+
+int 
+ipudp_del_tsa(ipudp_viface_params *viface, ipudp_tsa_params *tsa){
+	//XXX TODO XXX
+	return IPUDP_OK;
+}
+
+int 
+ipudp_add_tsa(ipudp_viface_params *viface, ipudp_tsa_params *tsa){
+	//XXX TODO XXX
+	return IPUDP_OK;
 }
 
 static void 
@@ -154,6 +151,7 @@ __list_dev_flush(void) {
 	}
 }
 
+// delete tunnel by tid
 int
 ipudp_del_tun(ipudp_viface_params *p, ipudp_tun_params *q) {
 	ipudp_dev *viface; 
@@ -345,8 +343,8 @@ ipudp_tunnel_setup(struct net_device *dev)
 {
 	dev->netdev_ops         = &ipudp_netdev_ops;
 	dev->destructor         = free_netdev;
-	dev->type               = ARPHRD_TUNNEL;
-	dev->flags              = IFF_NOARP;
+	dev->type               = ARPHRD_TUNNEL; //XXX XXX XXX
+	dev->flags              = IFF_NOARP/*|IFF_POINTOPOINT*/;
 	dev->iflink             = 0;
 	dev->addr_len           = 4;
 	dev->features           |= NETIF_F_NETNS_LOCAL;
@@ -631,8 +629,8 @@ __ipudp_init_priv_data(ipudp_dev_priv *p) {
 			}
 
 			//XXX put to 1
-			p->max_tun = 4;
-			p->max_tsa = 4;
+			p->max_tun = 40;
+			p->max_tsa = 40;
 			break;
 		default:
 			ret = IPUDP_BAD_PARAMS;
@@ -650,21 +648,6 @@ __ipudp_init_priv_data(ipudp_dev_priv *p) {
 done:
 	return ret;
 }
-
-/*
-static int
-__get_new_tid(struct list_head *l) {
-	ipudp_list_tun_item *p;
-	int i = 1; //XXX from 1
-
-	list_for_each_entry(p, l, list) {
-		if ((p->tid != i)) { 
-			return i;
-		}
-	}
-	return i;
-}
-*/
 
 static int
 __tun_addr_is_null(int len, __u8 *addr) {
@@ -831,10 +814,8 @@ __ipudp_create_and_add_tsa(ipudp_dev_priv *p, ipudp_tun_params *tun) {
 	memset(&tsa,0,sizeof(tsa));
 
 	//check if tsa already in the list
-	if (__tsa_already_in_list(p, tun)) {
-		printk("TSA IN\n");
+	if (__tsa_already_in_list(p, tun))
 		goto done;
-	}
 
 	if (p->tsa_count == p->max_tsa)	
 		return IPUDP_ERR_TSA_MAX;
@@ -850,6 +831,53 @@ __ipudp_create_and_add_tsa(ipudp_dev_priv *p, ipudp_tun_params *tun) {
 	p->tsa_count ++;
 
 done:
+	return IPUDP_OK;
+}
+
+static int 
+__tun_equal(ipudp_tun_params *p, ipudp_tun_params *q) {
+	if (
+			//same ports	
+			(p->srcport == q->srcport) &&
+			(p->destport == q->destport) &&
+			//same real dev
+			(p->dev_idx == q->dev_idx) &&
+			//same af
+			(p->af == q->af) &&
+			//same addresses
+			(!(memcmp(&(p->u),&(q->u),16)))
+	   )
+		return 1;
+	else 
+		return 0;
+}
+
+
+static int 
+__list_tun_insert(ipudp_list_tun_item *new, struct list_head *lhead) {
+	struct list_head *p = lhead;
+	ipudp_list_tun_item *item;
+
+	new->tun.tid = 1;
+	
+	if (list_empty(lhead))
+		goto done;
+
+	list_for_each(p, lhead) {
+		item = list_entry(p, ipudp_list_tun_item, list);
+	
+		//if tun already in return error
+		if(__tun_equal(&(item->tun),&(new->tun)))
+			return IPUDP_ERR_TUN_EXISTS;	
+
+		if (item->tun.tid != new->tun.tid) {
+			goto done;
+		}
+		(new->tun.tid)++;
+	}
+
+done:
+	list_add_rcu(&(new->list), p->prev);
 	return IPUDP_OK;
 }
 
@@ -878,13 +906,7 @@ ipudp_bind_tunnel(ipudp_viface_params *p, ipudp_tun_params *tun) {
 		goto err_ret;
 	}
 
-	//TODO
-	if (priv->params.mode != MODE_FIXED) {
-		//tun->tid = __get_new_tid(&(priv->list_tun));TODO
-		ret = IPUDP_ERR_TUN_BAD_PARAMS;
-		goto err_ret;
-	}	
-	
+	//check if tun parameters are not specified
 	if(  (( __tun_src_is_null(tun)) && (!(tun->dev_idx)))
 		|| __tun_dst_is_null(tun) || (!(tun->destport)) 
 						|| (!(tun->srcport)) )
@@ -899,7 +921,10 @@ ipudp_bind_tunnel(ipudp_viface_params *p, ipudp_tun_params *tun) {
 		goto err_ret;
 
 	/* add tunnel to list */
-	list_add_rcu(&(item->list), &(priv->list_tun));
+	//list_add_rcu(&(item->list), &(priv->list_tun));
+	if ((ret = __list_tun_insert((ipudp_list_tun_item *)&(item->list), &(priv->list_tun))))
+		goto err_ret;
+
 	priv->tun_count++;
 
 	spin_unlock_bh(&ipudp_lock);

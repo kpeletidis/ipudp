@@ -56,6 +56,7 @@ ipudp_ret_code{
 	IPUDP_ERR_TUN_BAD_PARAMS,
 	IPUDP_ERR_TUN_MAX,
 	IPUDP_ERR_TUN_NOT_FOUND,
+	IPUDP_ERR_TUN_EXISTS,
 
 	IPUDP_ERR_TSA_SOCK_CREATE,	
 	IPUDP_ERR_TSA_SOCK_BIND,
@@ -240,6 +241,7 @@ _ipudp_tsa_params{
 	} u;
 	__u16 port;
 	struct socket *sock;
+	__u32 id;
 }ipudp_tsa_params;
 
 typedef struct
