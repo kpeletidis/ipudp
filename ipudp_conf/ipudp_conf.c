@@ -272,7 +272,7 @@ main(int argc, char **argv){
 							printf("Error: expected valid ipv6 tun destination address\n");
 							usage_tun();	
 						}
-						memcpy(tun_params.u.v6p.dest,saddr_bin,16);
+						memcpy(tun_params.u.v6p.dest,daddr_bin,16);
 					}
 				}			
 				else {
