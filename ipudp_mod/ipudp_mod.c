@@ -863,7 +863,6 @@ __tsa_set_and_reserve_port(ipudp_tun_params *p, ipudp_tsa_params *tsa){
 	switch(p->af) {
 		case IPV4: {
 			struct sockaddr_in addr;
-	printk("adaddas\n");
 			addr_ptr = &addr;
 			addr_len = sizeof(addr);
 	
@@ -890,6 +889,7 @@ __tsa_set_and_reserve_port(ipudp_tun_params *p, ipudp_tsa_params *tsa){
 		
 			memset(&addr, 0, sizeof(struct sockaddr_in6));
 			addr.sin6_family = AF_INET6;
+
 			memcpy(&addr.sin6_addr, p->u.v6p.src, 
 					sizeof(struct in6_addr)); //XXX if all 0 --> addr_any
 			addr.sin6_port = p->srcport;
