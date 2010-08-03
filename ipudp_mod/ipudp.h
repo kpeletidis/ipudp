@@ -20,6 +20,7 @@
 #include <linux/types.h>
 #include <net/route.h>
 #include <net/ip.h>
+#include <net/ip6_route.h>
 #include <net/xfrm.h>
 #include <linux/spinlock.h>
 
@@ -70,6 +71,7 @@ ipudp4hdr {
 };
 
 #define IPUDP4_HDR_LEN 20 + 8
+#define IPUDP6_HDR_LEN 40 + 8
 
 struct 
 ipudp6hdr {

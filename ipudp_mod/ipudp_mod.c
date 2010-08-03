@@ -572,13 +572,7 @@ tx_error:
 
 void 
 ipudp_tun6_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *dev) {
-#if 0
 	// look at ip6_xmit()
-	
-	struct net *net = sock_net(sk);
-	if (*dst == NULL)
-		*dst = ip6_route_output(net, sk, fl);
-	
 	void *iph_in = skb->data;
 	u16 in_len;
 	struct iphv6dr *iph;
@@ -604,33 +598,30 @@ ipudp_tun6_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 	}
 
 	{	
-		struct flowi fl = {
-			.oif = tun->dev_idx,
-			.nl_u = {
-				.ip6_u = {
-					.daddr 	= tun->u.v6p.dest,
-					.saddr 	= tun->u.v6p.src,
-					.tos 	= 0,
-				}
-			},
-			.proto = IPPROTO_IPV6
-		};
+		struct flowi fl;
 
-		if (dst = ip6_route_output(dev_net(dev), sk, &fl)) {
+		memset(&fl,0,sizeof(fl));
+		ipv6_addr_copy(&fl.fl6_dst,(const struct in6_addr *)tun->u.v6p.dest);
+		ipv6_addr_copy(&fl.fl6_src,(const struct in6_addr *)tun->u.v6p.src);
+
+		fl.oif = tun->dev_idx;
+		fl.proto =IPPROTO_IPV6;
+
+		if (!(dst = ip6_route_output(dev_net(dev), skb->sk, &fl))) {
 			stats->tx_carrier_errors++;
 			goto tx_error;
 		}
 	}
-	
+
 	//XXX check when src addr not defined if ip6_route_lookup fill it
 
-	if (dst.dev == dev) {
+	if (dst->dev == dev) {
 		stats->collisions++;
 		dst_release(dst);//ip_rt_put(rt); //XXX
 		goto tx_error;
 	}
 
-	if (skb_headroom(skb) < LL_RESERVED_SPACE(/*rt->u.*/dst.dev) + IPUDP6_HDR_LEN 
+	if (skb_headroom(skb) < LL_RESERVED_SPACE(/*rt->u.*/dst->dev) + IPUDP6_HDR_LEN 
 			|| skb_shared(skb) || (skb_cloned(skb) && !skb_clone_writable(skb, 0))) {
 		new_skb = skb_realloc_headroom(skb, IPUDP6_HDR_LEN);
 		if (!new_skb) {
@@ -656,6 +647,7 @@ ipudp_tun6_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 	skb_dst_drop(skb);
 	skb_dst_set(skb, dst);
 
+#if 0
 	//push ipudp tunnel header
 	{
  		iph				= (struct ipv6hdr *)skb->data;
@@ -698,10 +690,13 @@ ipudp_tun6_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 
 	return;	
 
+#endif
+	dev_kfree_skb(skb);
+	return;
 tx_error:
+	printk("cazz\n");	
 	stats->tx_errors++;
 	dev_kfree_skb(skb);
-#endif
 }
 
 void
