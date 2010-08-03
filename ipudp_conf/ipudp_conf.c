@@ -11,11 +11,10 @@
 ipudp_genl_cmd cmd = 0;
 int cmd_attr = 0;
 
-
 void usage(){
 	printf( "Usage: ipudp_conf -cmd_arg <cmd_opt>\n"
-		"Possible cmd_arg: ADD (-a) DEL (-d) GET (-g) CHANGE (-c) LIST (-l)\n"
-		"Possible cmd_opt: args: dev, tun, rule, tsa, list\n"
+		"Possible cmd_arg: ADD (-a) DEL (-d) GET (-g) LIST (-l)\n"
+		"Possible cmd_opt: args: dev, tun, rule, tsa\n"
 	);
 	exit(-1);
 }
@@ -34,8 +33,8 @@ void usage_dev() {
 void usage_tun() {
 	printf( "tun help:\n"
 		"add ipudp tunnel:\n"
-		"ipudp_conf -a tun -N <viface_name> -T <mark>"
-		"-D <ip_dest> -S <ip_source> -L <locl_port> "
+		"ipudp_conf -a tun -N <viface_name> -T <mark> "
+		"-P <v4|v6> -D <ip_dest> -S <ip_source> -L <locl_port> "
 		"-R <remote_port> -I <tun_id> -U <tun_real_dev>\n"
 		"del ipudp tunnel:\n"
 		"ipudp_conf -d tun -N <viface_name> -I <tun_id>\n"
@@ -46,11 +45,7 @@ void usage_tun() {
 void usage_tsa() {
 	printf( "tun help:\n"
 		"add ipudp tsa:\n"
-		"ipudp_conf -d tsa -N <viface_name> -K <inode>"
-		"-D <ip_dest> -S <ip_source> -L <locl_port> "
-		"-R <remote_port> -I <tun_id> -U <tun_real_dev>\n"
-		"del ipudp tunnel:\n"
-		"ipudp_conf -d tun -N <viface_name> -I <tun_id>\n"
+		"ipudp_conf -d tsa -N <viface_name> -K <inode>\n"
 	);
 	exit(-1);
 }
@@ -78,13 +73,8 @@ main(int argc, char **argv){
 	unsigned long inode = 0;
 	int c;
 
-
-
-	while((c = getopt(argc, argv, "a:d:s:l:iR:L:S:D:N:U:M:T:P:I:K:"))!= -1) {
+	while((c = getopt(argc, argv, "a:d:s:l:R:L:S:D:N:U:M:T:P:I:K:"))!= -1) {
 		switch (c) {
-			case 'i': //debug XXX to be removed
-				cmd = IPUDP_C_MODULE_TEST;
-				break;		
 			case 'a':
 				cmd = IPUDP_C_ADD;
 				if (!strcmp(optarg, "tun"))
@@ -217,8 +207,8 @@ main(int argc, char **argv){
 			{
 				ipudp_viface_params viface_params;
 				ipudp_tun_params tun_params;
-				u8 saddr_bin[128]; //also for v4        
-				u8 daddr_bin[128]; //also for v4
+				u8 saddr_bin[16]; //also for v4        
+				u8 daddr_bin[16]; //also for v4
 				int iface_idx;
 	
 				memset(&viface_params,0,sizeof(viface_params));
@@ -230,8 +220,6 @@ main(int argc, char **argv){
 				}
 
 				memcpy(viface_params.name, viface_name, strlen(viface_name));
-
-	
 				
 				if (!ip_vers) {
 					printf("Error: tun ip version must be specified\n");
@@ -270,18 +258,18 @@ main(int argc, char **argv){
 					tun_params.dev_idx = iface_idx;
 				}
 
-				//parse dest source address
+				//parse tun dest address
 				if (dest_addr) {
 					if (ip_vers == IPV4){	
 						if (inet_pton(AF_INET, dest_addr, daddr_bin) <= 0) {
-							printf("Error: expected valid ipv4 tun source address\n");
+							printf("Error: expected valid ipv4 tun destination address\n");
 							usage_tun();	
 						}	
 						memcpy(&(tun_params.u.v4p.dest),daddr_bin,4);
 					}
 					else {
 						if (inet_pton(AF_INET6, dest_addr, daddr_bin) <= 0){	
-							printf("Error: expected valid ipv6 tun source address\n");
+							printf("Error: expected valid ipv6 tun destination address\n");
 							usage_tun();	
 						}
 						memcpy(&(tun_params.u.v4p.dest),saddr_bin,16);
@@ -295,7 +283,7 @@ main(int argc, char **argv){
 				if (local_port)
 					tun_params.srcport = htons(local_port);
 				else {
-					//eventhough not strictly necessary we prefer
+					//even though it is not strictly necessary we prefer
 					//to allow only specified local port.. for now TODO
 					printf("Error: tun local port must be specified\n");
 					usage_tun();	

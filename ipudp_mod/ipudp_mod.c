@@ -571,9 +571,137 @@ tx_error:
 }
 
 void 
-ipudp_tun6_xmit(struct sk_buff *buf, ipudp_tun_params *tun, struct net_device *dev) {
-	//TODO
-	return;
+ipudp_tun6_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *dev) {
+#if 0
+	// look at ip6_xmit()
+	
+	struct net *net = sock_net(sk);
+	if (*dst == NULL)
+		*dst = ip6_route_output(net, sk, fl);
+	
+	void *iph_in = skb->data;
+	u16 in_len;
+	struct iphv6dr *iph;
+	struct udphdr *udph;
+	struct sk_buff *new_skb; 
+	struct netdev_queue *txq = netdev_get_tx_queue(dev, 0);
+	struct net_device_stats *stats = &dev->stats;
+	int err;
+	struct dst_entry *dst;
+
+	if (skb->protocol == htons(ETH_P_IP)) 
+		in_len = ntohs( ((struct iphdr *)iph_in)->tot_len );
+	else if(skb->protocol == htons(ETH_P_IPV6))
+		in_len = ntohs( ((struct ipv6hdr *)iph_in)->payload_len ) + sizeof(struct ipv6hdr) ;
+	else {
+		stats->tx_dropped++;
+		goto tx_error;
+	}
+
+	if (in_len > dev->mtu) {
+		stats->tx_dropped++;
+		goto tx_error;
+	}
+
+	{	
+		struct flowi fl = {
+			.oif = tun->dev_idx,
+			.nl_u = {
+				.ip6_u = {
+					.daddr 	= tun->u.v6p.dest,
+					.saddr 	= tun->u.v6p.src,
+					.tos 	= 0,
+				}
+			},
+			.proto = IPPROTO_IPV6
+		};
+
+		if (dst = ip6_route_output(dev_net(dev), sk, &fl)) {
+			stats->tx_carrier_errors++;
+			goto tx_error;
+		}
+	}
+	
+	//XXX check when src addr not defined if ip6_route_lookup fill it
+
+	if (dst.dev == dev) {
+		stats->collisions++;
+		dst_release(dst);//ip_rt_put(rt); //XXX
+		goto tx_error;
+	}
+
+	if (skb_headroom(skb) < LL_RESERVED_SPACE(/*rt->u.*/dst.dev) + IPUDP6_HDR_LEN 
+			|| skb_shared(skb) || (skb_cloned(skb) && !skb_clone_writable(skb, 0))) {
+		new_skb = skb_realloc_headroom(skb, IPUDP6_HDR_LEN);
+		if (!new_skb) {
+			stats->tx_dropped++;
+			dst_release(dst); //ip_rt_put(rt);
+			goto tx_error;
+		}
+
+		if (skb->sk) 
+			skb_set_owner_w(new_skb, skb->sk);
+
+		dev_kfree_skb(skb);
+		skb = new_skb;
+		iph_in = skb->data;
+	}
+
+	skb_push(skb, IPUDP6_HDR_LEN);
+	skb_reset_network_header(skb);
+
+	memset(&(IPCB(skb)->opt), 0, sizeof(IPCB(skb)->opt));
+	//XXX check
+	IPCB(skb)->flags &= ~(IPSKB_XFRM_TUNNEL_SIZE | IPSKB_XFRM_TRANSFORMED | IPSKB_REROUTED);
+	skb_dst_drop(skb);
+	skb_dst_set(skb, dst);
+
+	//push ipudp tunnel header
+	{
+ 		iph				= (struct ipv6hdr *)skb->data;
+		iph->version	= 6;
+		iph->ihl		= sizeof(struct iphdr)>>2;
+		iph->frag_off 	= htons(IP_DF); //XXX
+		iph->protocol	= IPPROTO_UDP;
+		iph->tos		= 0;
+		iph->saddr		= rt->rt_src;  //XXX if in fl take it
+		iph->daddr 		= rt->rt_dst;  //XXX
+		iph->tot_len 	= htons(in_len + IPUDP6_HDR_LEN);
+		iph->ttl		= 0x40;
+		iph->check 		= 0;
+		
+		udph 			= (struct udphdr *)(skb->data + 20);
+		udph->source	= tun->srcport;
+		udph->dest		= tun->destport;
+		udph->len 		= htons(in_len + 8);
+		udph->check		= 0;
+
+		ip_select_ident(ip_hdr(skb), &rt->u.dst, NULL);
+		skb->ip_summed = CHECKSUM_NONE; //it will be computed by ip layer
+		udph->check = __udp_cheksum(iph, udph);
+	}
+
+	nf_reset(skb);
+	skb->mark = tun->mark;
+
+	dev->stats.tx_packets++;
+	dev->stats.tx_bytes += skb->len;
+	err = ip6_local_out(skb);
+
+	if (likely(net_xmit_eval(err) == 0)) {
+		txq->tx_bytes += skb->len;
+		txq->tx_packets++;
+	} else {
+		stats->tx_errors++;
+		stats->tx_aborted_errors++;
+	}
+
+	return;	
+
+tx_error:
+	stats->tx_errors++;
+	dev_kfree_skb(skb);
+#endif
 }
 
 void
@@ -615,8 +743,8 @@ ipudp_tun4_recv(struct sk_buff *skb, struct net_device *dev) {
 }
 
 void
-ipudp_tun6_recv(struct sk_buff *buf, struct net_device *dev) {
-	//TODO
+ipudp_tun6_recv(struct sk_buff *skb, struct net_device *dev) {
+	//TODO should be the same as ipudp_tun4_recv besides skb_pull(skb, IPUDP6_HDR_LEN);
 	return;
 }
 
@@ -735,7 +863,7 @@ __tsa_set_and_reserve_port(ipudp_tun_params *p, ipudp_tsa_params *tsa){
 	switch(p->af) {
 		case IPV4: {
 			struct sockaddr_in addr;
-
+	printk("adaddas\n");
 			addr_ptr = &addr;
 			addr_len = sizeof(addr);
 	
@@ -762,7 +890,7 @@ __tsa_set_and_reserve_port(ipudp_tun_params *p, ipudp_tsa_params *tsa){
 		
 			memset(&addr, 0, sizeof(struct sockaddr_in6));
 			addr.sin6_family = AF_INET6;
-			memcpy(&addr.sin6_addr, &p->u.v6p.src, 
+			memcpy(&addr.sin6_addr, p->u.v6p.src, 
 					sizeof(struct in6_addr)); //XXX if all 0 --> addr_any
 			addr.sin6_port = p->srcport;
 		
@@ -772,7 +900,7 @@ __tsa_set_and_reserve_port(ipudp_tun_params *p, ipudp_tsa_params *tsa){
 				goto err_return;
 			}
 
-			memcpy(&tsa->u.v6addr, &addr.sin6_addr, 
+			memcpy(tsa->u.v6addr, &addr.sin6_addr, 
 						sizeof(struct in6_addr));
 			break;
 		}
@@ -790,7 +918,6 @@ __tsa_set_and_reserve_port(ipudp_tun_params *p, ipudp_tsa_params *tsa){
 	tsa->af = p->af;
 	tsa->port = p->srcport; 
 
-	//XXX
 	inode = SOCK_INODE(sock);
 	tsa->ino = inode->i_ino;
 

@@ -234,49 +234,6 @@ print_nl_attrs(void){
 */
 
 int 
-do_cmd_module_test(void){
-	struct nlattr *na;
-	//struct sockaddr_nl nladdr;
-	char * echo_str = "Hi from user space\n"; 
-	int err = 0;
-	char *s;
-	
-	/* fill the header */
-	req.n.nlmsg_len 	= NLMSG_LENGTH(GENL_HDRLEN);
-	req.n.nlmsg_type 	= ipudp_fam_id;
-	req.n.nlmsg_flags 	= NLM_F_REQUEST;
-	req.n.nlmsg_seq 	= 0;
-	req.n.nlmsg_pid 	= getpid();
-	req.g.cmd 		= IPUDP_C_MODULE_TEST;
-
-
-	/* first attribute - msg type */
-	na = (struct nlattr *) GENLMSG_DATA(&req);
-	set_nl_attr(na, IPUDP_A_STRING, echo_str, 
-					strlen(echo_str));
-	req.n.nlmsg_len += NLMSG_ALIGN(na->nla_len);
-
-	
-	/* send nl message */
-	if (sendto_fd(nl_sd, (char *) &req, req.n.nlmsg_len) < 0)  {
-		printf("ipudp_genl: error sending genl message\n");
-		return -1;
-	}
-
-	if ((err = receive_response()) < 0){ 
-		printf("receive_response error!\n");
-		return err;
-	}
-	
-	parse_nl_attrs();
-	
-	err = *(int*)get_nl_data(IPUDP_A_RET_CODE);	
-	s = (char *) get_nl_data(IPUDP_A_STRING);
-
-	return err;
-}
-
-int 
 do_cmd_add_viface(ipudp_viface_params *p){
 	struct nlattr *na;
 	//struct sockaddr_nl nladdr;
@@ -637,7 +594,6 @@ __print_list_attr(ipudp_nl_cmd_spec cmd_spec, void *data) {
 	}
 }
 
-//this function is realyl really ugly... TODO
 static int 
 __parse_list(ipudp_nl_cmd_spec cmd_spec) {
 	int ret = 0;
