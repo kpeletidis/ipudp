@@ -503,8 +503,8 @@ __print_tun_params(ipudp_tun_params * data) {
 	}
 	else if (data->af == IPV6) {
 		if (!data->dev_idx)
-			inet_ntop(AF_INET, &(data->u.v6p.src), ip_src, 64);
-		inet_ntop(AF_INET, &(data->u.v6p.dest), ip_dest, 64);
+			inet_ntop(AF_INET6, &(data->u.v6p.src), ip_src, 64);
+		inet_ntop(AF_INET6, &(data->u.v6p.dest), ip_dest, 64);
 	}
 	else {
 		printf("unknown outer af family\n");
