@@ -551,7 +551,8 @@ ipudp_tun4_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 					.tos 	= 0,
 				}
 			},
-			.proto 	= IPPROTO_IP
+			.proto	= IPPROTO_UDP 
+			//.proto 	= IPPROTO_IP
 		};
 
 		if (ip_route_output_key(dev_net(dev), &rt, &fl)) {
@@ -650,9 +651,7 @@ ipudp_tun6_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 	int err;
 	struct dst_entry *dst;
 	struct rt6_info *rt;
-	struct in6_addr *saddr;
-	struct in6_addr *daddr;
-	int odev;
+	struct flowi fl;
 
 	if (skb->protocol == htons(ETH_P_IP)) 
 		in_len = ntohs( ((struct iphdr *)iph_in)->tot_len );
@@ -669,17 +668,24 @@ ipudp_tun6_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 	}
 
 	{	
-		odev = tun->dev_idx;
-
-		if (!(rt = rt6_lookup(dev_net(dev), (struct in6_addr *)tun->u.v6p.dest,  (struct in6_addr *)tun->u.v6p.src, odev, 0))) {
-			stats->tx_carrier_errors++;
-			goto tx_error;
+		__u8 addr6_any[16] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+		memset(&fl, 0, sizeof(fl));
+		if (!(memcmp(tun->u.v6p.src, &addr6_any, 16)))  {
+			if (!(rt = rt6_lookup(dev_net(dev), (struct in6_addr *)tun->u.v6p.dest,  (struct in6_addr *)tun->u.v6p.src, tun->dev_idx, 0))) {
+				stats->tx_carrier_errors++;
+				goto tx_error;
+			}
+			memcpy(&fl.fl6_src,&rt->rt6i_idev->addr_list->addr, 16);
+			//XXX guess I can get this address also from dst->dev 
+			//without another route lookup
 		}
+		else
+			memcpy(&fl.fl6_src, tun->u.v6p.src, 16);
 
-		daddr = (struct in6_addr *)tun->u.v6p.dest; 
-		saddr = &rt->rt6i_idev->addr_list->addr;	
-		odev = rt->rt6i_dev->ifindex;
-		dst = &rt->u.dst;	
+		memcpy(&fl.fl6_dst, tun->u.v6p.dest, 16);
+		fl.oif = tun->dev_idx;
+		fl.proto = IPPROTO_UDP;	
+		dst = ip6_route_output(dev_net(dev), NULL, &fl);
 	}
 
 	if (dst->dev == dev) {
@@ -720,8 +726,8 @@ ipudp_tun6_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 		iph->payload_len = htons(in_len + 8); //no ipv6 options
 		iph->nexthdr = IPPROTO_UDP;
 		iph->hop_limit = 0x40;
-		memcpy(&(iph->saddr), saddr, 16);
-		memcpy(&(iph->daddr), daddr, 16);
+		memcpy(&(iph->saddr), &fl.fl6_src, 16);
+		memcpy(&(iph->daddr), &fl.fl6_dst, 16);
 		
 		udph 			= (struct udphdr *)(skb->data + 40);
 		udph->source		= tun->srcport;

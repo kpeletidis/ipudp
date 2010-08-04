@@ -10,6 +10,7 @@
 #include <net/netlink.h>
 #include <net/genetlink.h>
 #include <linux/in.h>
+#include <linux/in6.h>
 #include <linux/ip.h>
 #include <linux/ipv6.h>
 #include <linux/udp.h>
