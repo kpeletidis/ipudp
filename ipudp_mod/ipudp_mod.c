@@ -794,12 +794,10 @@ __ipudp_tun_recv(struct sk_buff *skb, struct net_device *dev, int pull_len) {
 
 void
 ipudp_tun4_recv(struct sk_buff *skb, struct net_device *dev) {	
-printk("RCV 4\n");
 	__ipudp_tun_recv(skb, dev, IPUDP4_HDR_LEN);
 }
 void
 ipudp_tun6_recv(struct sk_buff *skb, struct net_device *dev) {
-printk("RCV 6\n");
 	__ipudp_tun_recv(skb, dev, IPUDP6_HDR_LEN);
 	return;
 }
