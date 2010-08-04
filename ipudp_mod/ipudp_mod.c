@@ -258,7 +258,7 @@ ipudp_tsa6_rcv(unsigned int hooknum, struct sk_buff *skb,
 	ipudp_list_tsa_item *tsa_i;
 	struct in6_addr *addr;
 
-	iph = (struct ipv6hdr *)skb->data;
+	iph = ipv6_hdr(skb);
 
 	/* for now, if there are options discard the packet */
 	/* TODO maybe could be usefull to use options...*/
@@ -266,7 +266,7 @@ ipudp_tsa6_rcv(unsigned int hooknum, struct sk_buff *skb,
 	if so, the packet shouldn't be discarded... CHECK IT */
 	if (iph->nexthdr != IPPROTO_UDP) return NF_ACCEPT;
 
-	udph = (struct udphdr *)skb->data + 40; 
+	udph = (struct udphdr *) ((__u8 *)iph + sizeof(*iph)); 
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(p, ipudp->viface_list, list) {
@@ -274,21 +274,6 @@ ipudp_tsa6_rcv(unsigned int hooknum, struct sk_buff *skb,
 		if (priv->params.af_out == IPV6) {
 			list_for_each_entry_rcu(tsa_i, &(priv->list_tsa), list){
 				addr = (struct in6_addr *)tsa_i->tsa.u.v6addr;
-{
-int i;
-__u8 *pp;
-
-pp = (__u8 *)addr;
-printk("addr ");
-for (i = 0; i <16; i++)
-printk("%u ",pp[i]);
-printk("\n");
- 
-pp = (__u8 *)&(iph->daddr);
-printk("daddr ");
-printk("%d, %d\n",tsa_i->tsa.dev_idx, in->ifindex);
-printk("%d, %d\n",ntohs(tsa_i->tsa.port), ntohs(udph->dest));
-}
 
 				if (	( !memcmp(addr, &(iph->daddr), 16) || 
 					(tsa_i->tsa.dev_idx == in->ifindex) ) &&
