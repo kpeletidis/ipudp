@@ -754,15 +754,15 @@ tx_error:
 	dev_kfree_skb(skb);
 }
 
-void
-ipudp_tun4_recv(struct sk_buff *skb, struct net_device *dev) {
+static void
+__ipudp_tun_recv(struct sk_buff *skb, struct net_device *dev, int pull_len) {
 	struct iphdr *ip;
 	struct sk_buff *new_skb; 
 
 	new_skb = skb_clone(skb, GFP_ATOMIC);
 	secpath_reset(new_skb);
 	//new_skb->mac_header = new_skb->network_header;
-	skb_pull(new_skb, IPUDP4_HDR_LEN);
+	skb_pull(new_skb, pull_len);
 	//skb_reset_network_header(new_skb);
 
 	ip = (struct iphdr *)new_skb->data;
@@ -793,8 +793,12 @@ ipudp_tun4_recv(struct sk_buff *skb, struct net_device *dev) {
 }
 
 void
+ipudp_tun4_recv(struct sk_buff *skb, struct net_device *dev) {	
+	__ipudp_tun_recv(skb, dev, IPUDP4_HDR_LEN);
+}
+void
 ipudp_tun6_recv(struct sk_buff *skb, struct net_device *dev) {
-	//TODO should be the same as ipudp_tun4_recv besides skb_pull(skb, IPUDP6_HDR_LEN);
+	__ipudp_tun_recv(skb, dev, IPUDP6_HDR_LEN);
 	return;
 }
 
