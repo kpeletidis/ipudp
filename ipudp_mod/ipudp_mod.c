@@ -737,6 +737,10 @@ ipudp_tun6_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 	skb->mark = tun->mark;
 
 	//send it
+	//there's something wrong... I noticed that this function fails if the
+	//arp chache doesn't contain a binding for the destination address.
+	//where is the error? here? shouldn't I use rt6_lookup()?
+	//XXX to understand XXX
 	err = ip6_local_out(skb);
 
 	if (likely(net_xmit_eval(err) == 0)) {
