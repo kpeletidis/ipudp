@@ -256,7 +256,7 @@ ipudp_tsa6_rcv(unsigned int hooknum, struct sk_buff *skb,
 	ipudp_dev *p;
 	ipudp_dev_priv *priv;
 	ipudp_list_tsa_item *tsa_i;
-	struct in6_addr *saddr;
+	struct in6_addr *addr;
 
 	iph = (struct ipv6hdr *)skb->data;
 
@@ -266,17 +266,32 @@ ipudp_tsa6_rcv(unsigned int hooknum, struct sk_buff *skb,
 	if so, the packet shouldn't be discarded... CHECK IT */
 	if (iph->nexthdr != IPPROTO_UDP) return NF_ACCEPT;
 
-	udph = (struct udphdr *)skb->data + sizeof(*iph); 
+	udph = (struct udphdr *)skb->data + 40; 
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(p, ipudp->viface_list, list) {
 		priv = netdev_priv(p->dev);
 		if (priv->params.af_out == IPV6) {
 			list_for_each_entry_rcu(tsa_i, &(priv->list_tsa), list){
-				saddr = (struct in6_addr *)tsa_i->tsa.u.v6addr;
-				
-				if (	(!memcmp(saddr, &(iph->daddr), 16) || 
-					(tsa_i->tsa.dev_idx == in->ifindex)) &&
+				addr = (struct in6_addr *)tsa_i->tsa.u.v6addr;
+{
+int i;
+__u8 *pp;
+
+pp = (__u8 *)addr;
+printk("addr ");
+for (i = 0; i <16; i++)
+printk("%u ",pp[i]);
+printk("\n");
+ 
+pp = (__u8 *)&(iph->daddr);
+printk("daddr ");
+printk("%d, %d\n",tsa_i->tsa.dev_idx, in->ifindex);
+printk("%d, %d\n",ntohs(tsa_i->tsa.port), ntohs(udph->dest));
+}
+
+				if (	( !memcmp(addr, &(iph->daddr), 16) || 
+					(tsa_i->tsa.dev_idx == in->ifindex) ) &&
 					(tsa_i->tsa.port == udph->dest)	) {
 
 					if (ipudp_checksum6_ok(iph, udph))
@@ -794,10 +809,12 @@ __ipudp_tun_recv(struct sk_buff *skb, struct net_device *dev, int pull_len) {
 
 void
 ipudp_tun4_recv(struct sk_buff *skb, struct net_device *dev) {	
+printk("RCV 4\n");
 	__ipudp_tun_recv(skb, dev, IPUDP4_HDR_LEN);
 }
 void
 ipudp_tun6_recv(struct sk_buff *skb, struct net_device *dev) {
+printk("RCV 6\n");
 	__ipudp_tun_recv(skb, dev, IPUDP6_HDR_LEN);
 	return;
 }
