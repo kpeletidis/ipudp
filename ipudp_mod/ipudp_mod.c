@@ -225,13 +225,6 @@ found:
 	return IPUDP_OK;
 }
 
-unsigned int 
-ipudp_tsa6_rcv(unsigned int hooknum, struct sk_buff *skb, const struct net_device *in,
-			  const struct net_device *out, int (*okfn)(struct sk_buff*)) {
-	/*TODO*/
-	return NF_ACCEPT;
-}
-
 __u16 __udp6_cheksum(struct ipv6hdr *iph, struct udphdr *udph) {
 	__wsum	csum;
 
@@ -240,11 +233,77 @@ __u16 __udp6_cheksum(struct ipv6hdr *iph, struct udphdr *udph) {
 			ntohs(udph->len), IPPROTO_UDP, csum);
 }
 
+static int
+ipudp_checksum6_ok(struct ipv6hdr *iph, struct udphdr *udph) {
+	__u16 csum;
+
+	csum = udph->check;	
+	udph->check = 0;
+	udph->check = __udp6_cheksum(iph, udph);
+
+	if (csum != udph->check)
+		return 0;
+
+	return 1;
+}
+
+unsigned int 
+ipudp_tsa6_rcv(unsigned int hooknum, struct sk_buff *skb, 
+	const struct net_device *in, const struct net_device *out, 
+					int (*okfn)(struct sk_buff*)) {
+	struct ipv6hdr * iph;
+	struct udphdr * udph;
+	ipudp_dev *p;
+	ipudp_dev_priv *priv;
+	ipudp_list_tsa_item *tsa_i;
+	struct in6_addr *saddr;
+
+	iph = (struct ipv6hdr *)skb->data;
+
+	/* for now, if there are options discard the packet */
+	/* TODO maybe could be usefull to use options...*/
+	/* XXX not sure if in the path some router can add any opt.
+	if so, the packet shouldn't be discarded... CHECK IT */
+	if (iph->nexthdr != IPPROTO_UDP) return NF_ACCEPT;
+
+	udph = (struct udphdr *)skb->data + sizeof(*iph); 
+
+	rcu_read_lock();
+	list_for_each_entry_rcu(p, ipudp->viface_list, list) {
+		priv = netdev_priv(p->dev);
+		if (priv->params.af_out == IPV6) {
+			list_for_each_entry_rcu(tsa_i, &(priv->list_tsa), list){
+				saddr = (struct in6_addr *)tsa_i->tsa.u.v6addr;
+				
+				if (	(!memcmp(saddr, &(iph->daddr), 16) || 
+					(tsa_i->tsa.dev_idx == in->ifindex)) &&
+					(tsa_i->tsa.port == udph->dest)	) {
+
+					if (ipudp_checksum6_ok(iph, udph))
+						priv->tun_recv(skb, p->dev);
+					else
+						p->dev->stats.tx_dropped++;
+
+					goto done;
+				}
+			}
+		}
+	}
+	rcu_read_unlock();
+
+	return NF_ACCEPT;
+done:
+	rcu_read_unlock();
+	/* TODO update_fw_table */
+	return NF_DROP;
+}
+
 __u16 __udp_cheksum(struct iphdr *iph, struct udphdr *udph) {
 	__wsum	csum;
 
 	csum = csum_partial(udph, ntohs(udph->len), 0);
-	return csum_tcpudp_magic(iph->saddr, iph->daddr, ntohs(udph->len), IPPROTO_UDP, csum);
+	return csum_tcpudp_magic(iph->saddr, iph->daddr, 
+				ntohs(udph->len), IPPROTO_UDP, csum);
 }
 
 static int
@@ -288,22 +347,25 @@ ipudp_tsa4_rcv(unsigned int hooknum, struct sk_buff *skb, const struct net_devic
 	rcu_read_lock();
 	list_for_each_entry_rcu(p, ipudp->viface_list, list) {
 		priv = netdev_priv(p->dev);
-		list_for_each_entry_rcu(tsa_i, &(priv->list_tsa), list) {
-			if (((tsa_i->tsa.u.v4addr == iph->daddr) || (tsa_i->tsa.dev_idx == in->ifindex)) 
-					&& (tsa_i->tsa.port == udph->dest)) {
+		if (priv->params.af_out == IPV4) {
+			list_for_each_entry_rcu(tsa_i, &(priv->list_tsa), list){
+				if (((tsa_i->tsa.u.v4addr == iph->daddr) || 
+					(tsa_i->tsa.dev_idx == in->ifindex)) &&
+					(tsa_i->tsa.port == udph->dest)) {
 
-				if (iph->frag_off & htons(IP_MF)) {
-					/* fragmentation not supported */	
-					p->dev->stats.tx_dropped++;
+					if (iph->frag_off & htons(IP_MF)) {
+						//fragmentation not supported	
+						p->dev->stats.tx_dropped++;
+						goto done;
+					}
+
+					if (ipudp_checksum4_ok(iph, udph))
+						priv->tun_recv(skb, p->dev);
+					else
+						p->dev->stats.tx_dropped++;
+
 					goto done;
 				}
-
-				if (ipudp_checksum4_ok(iph, udph))
-					priv->tun_recv(skb, p->dev);
-				else
-					p->dev->stats.tx_dropped++;
-
-				goto done;
 			}
 		}
 	}
