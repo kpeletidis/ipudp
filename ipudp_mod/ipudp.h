@@ -21,6 +21,7 @@
 #include <net/route.h>
 #include <net/ip.h>
 #include <net/ip6_route.h>
+#include <net/ip6_fib.h>
 #include <net/xfrm.h>
 #include <linux/spinlock.h>
 

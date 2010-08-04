@@ -232,6 +232,13 @@ ipudp_tsa6_rcv(unsigned int hooknum, struct sk_buff *skb, const struct net_devic
 	return NF_ACCEPT;
 }
 
+__u16 __udp6_cheksum(struct ipv6hdr *iph, struct udphdr *udph) {
+	__wsum	csum;
+
+	csum = csum_partial(udph, ntohs(udph->len), 0);
+	return csum_ipv6_magic(&(iph->saddr), &(iph->daddr),
+			ntohs(udph->len), IPPROTO_UDP, csum);
+}
 
 __u16 __udp_cheksum(struct iphdr *iph, struct udphdr *udph) {
 	__wsum	csum;
@@ -551,8 +558,6 @@ ipudp_tun4_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 	nf_reset(skb);
 	skb->mark = tun->mark;
 
-	dev->stats.tx_packets++;
-	dev->stats.tx_bytes += skb->len;
 	err = ip_local_out(skb);
 
 	if (likely(net_xmit_eval(err) == 0)) {
@@ -575,13 +580,17 @@ ipudp_tun6_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 	// look at ip6_xmit()
 	void *iph_in = skb->data;
 	u16 in_len;
-	struct iphv6dr *iph;
+	struct ipv6hdr *iph;
 	struct udphdr *udph;
 	struct sk_buff *new_skb; 
 	struct netdev_queue *txq = netdev_get_tx_queue(dev, 0);
 	struct net_device_stats *stats = &dev->stats;
 	int err;
 	struct dst_entry *dst;
+	struct rt6_info *rt;
+	struct in6_addr *saddr;
+	struct in6_addr *daddr;
+	int odev;
 
 	if (skb->protocol == htons(ETH_P_IP)) 
 		in_len = ntohs( ((struct iphdr *)iph_in)->tot_len );
@@ -598,30 +607,25 @@ ipudp_tun6_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 	}
 
 	{	
-		struct flowi fl;
+		odev = tun->dev_idx;
 
-		memset(&fl,0,sizeof(fl));
-		ipv6_addr_copy(&fl.fl6_dst,(const struct in6_addr *)tun->u.v6p.dest);
-		ipv6_addr_copy(&fl.fl6_src,(const struct in6_addr *)tun->u.v6p.src);
-
-		fl.oif = tun->dev_idx;
-		fl.proto =IPPROTO_IPV6;
-
-		if (!(dst = ip6_route_output(dev_net(dev), skb->sk, &fl))) {
+		if (!(rt = rt6_lookup(dev_net(dev), (struct in6_addr *)tun->u.v6p.dest,  (struct in6_addr *)tun->u.v6p.src, odev, 0))) {
 			stats->tx_carrier_errors++;
 			goto tx_error;
 		}
-	}
 
-	//XXX check when src addr not defined if ip6_route_lookup fill it
+		daddr = (struct in6_addr *)tun->u.v6p.dest; 
+		saddr = &rt->rt6i_idev->addr_list->addr;	
+		odev = rt->rt6i_dev->ifindex;
+		dst = &rt->u.dst;	
+	}
 
 	if (dst->dev == dev) {
 		stats->collisions++;
 		dst_release(dst);//ip_rt_put(rt); //XXX
 		goto tx_error;
 	}
-
-	if (skb_headroom(skb) < LL_RESERVED_SPACE(/*rt->u.*/dst->dev) + IPUDP6_HDR_LEN 
+	if (skb_headroom(skb) < LL_RESERVED_SPACE(dst->dev) + IPUDP6_HDR_LEN 
 			|| skb_shared(skb) || (skb_cloned(skb) && !skb_clone_writable(skb, 0))) {
 		new_skb = skb_realloc_headroom(skb, IPUDP6_HDR_LEN);
 		if (!new_skb) {
@@ -647,37 +651,30 @@ ipudp_tun6_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 	skb_dst_drop(skb);
 	skb_dst_set(skb, dst);
 
-#if 0
 	//push ipudp tunnel header
 	{
- 		iph				= (struct ipv6hdr *)skb->data;
-		iph->version	= 6;
-		iph->ihl		= sizeof(struct iphdr)>>2;
-		iph->frag_off 	= htons(IP_DF); //XXX
-		iph->protocol	= IPPROTO_UDP;
-		iph->tos		= 0;
-		iph->saddr		= rt->rt_src;  //XXX if in fl take it
-		iph->daddr 		= rt->rt_dst;  //XXX
-		iph->tot_len 	= htons(in_len + IPUDP6_HDR_LEN);
-		iph->ttl		= 0x40;
-		iph->check 		= 0;
+ 		iph = (struct ipv6hdr *)skb->data;
+		*(__be32 *)iph = htonl(0x60000000);
+		iph->payload_len = htons(in_len + 8); //no ipv6 options
+		iph->nexthdr = IPPROTO_UDP;
+		iph->hop_limit = 0x40;
+		memcpy(&(iph->saddr), saddr, 16);
+		memcpy(&(iph->daddr), daddr, 16);
 		
-		udph 			= (struct udphdr *)(skb->data + 20);
-		udph->source	= tun->srcport;
+		udph 			= (struct udphdr *)(skb->data + 40);
+		udph->source		= tun->srcport;
 		udph->dest		= tun->destport;
 		udph->len 		= htons(in_len + 8);
 		udph->check		= 0;
 
-		ip_select_ident(ip_hdr(skb), &rt->u.dst, NULL);
-		skb->ip_summed = CHECKSUM_NONE; //it will be computed by ip layer
-		udph->check = __udp_cheksum(iph, udph);
+		//skb->ip_summed = CHECKSUM_NONE; //it will be computed by ip layer
+		udph->check = __udp6_cheksum(iph, udph);
 	}
 
 	nf_reset(skb);
 	skb->mark = tun->mark;
 
-	dev->stats.tx_packets++;
-	dev->stats.tx_bytes += skb->len;
+	//send it
 	err = ip6_local_out(skb);
 
 	if (likely(net_xmit_eval(err) == 0)) {
@@ -690,11 +687,7 @@ ipudp_tun6_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 
 	return;	
 
-#endif
-	dev_kfree_skb(skb);
-	return;
 tx_error:
-	printk("cazz\n");	
 	stats->tx_errors++;
 	dev_kfree_skb(skb);
 }
