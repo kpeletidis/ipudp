@@ -246,6 +246,7 @@ _ipudp_tsa_params{
 	__u16 port;
 	struct socket *sock;
 	unsigned long ino; //this can be considered the unique id for the tsa
+	int ref_cnt;
 }ipudp_tsa_params;
 
 typedef struct

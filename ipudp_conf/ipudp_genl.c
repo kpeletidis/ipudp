@@ -514,7 +514,7 @@ __print_tun_params(ipudp_tun_params * data) {
 	if (data->dev_idx) {
 		if (get_iface_name_by_idx(data->dev_idx, ifname) < 0) {
 			sprintf(temp,"underlying device index %d", data->dev_idx);
-			printf("warning: error getting iface name from index. Are you root?\n");
+			//printf("warning: error getting iface name from index. Are you root?\n");
 		}
 		else 	
 			sprintf(temp,"underlying device %s", ifname);
@@ -564,8 +564,8 @@ __print_tsa_params(ipudp_tsa_params * data) {
 	else
 		sprintf(temp,"source IP address %s", ip_src);
 
-	printf("\ttsa: socket fd %ld, %s, source UDP port %d, device idx %d\n",
-			data->ino, temp, ntohs(data->port), data->dev_idx);
+	printf("\ttsa: socket fd %ld, %s, source UDP port %d, device idx %d,ref cnt %d\n",
+			data->ino, temp, ntohs(data->port), data->dev_idx, data->ref_cnt);
 
 	return;
 

@@ -19,6 +19,7 @@ static void  ipudp_clean_priv(ipudp_dev_priv *);
 void ipudp_list_tsa_flush(ipudp_dev_priv *);
 void ipudp_list_tun_flush(ipudp_dev_priv *);
 
+ipudp_list_tsa_item *__tsa_already_in_list(ipudp_dev_priv *, ipudp_tun_params *);
 
 static const char banner[] __initconst =
 	KERN_INFO "Tunneling - IP over IP/UDP - module\n";
@@ -170,6 +171,7 @@ int
 ipudp_del_tun(ipudp_viface_params *p, ipudp_tun_params *q) {
 	ipudp_dev *viface; 
 	ipudp_list_tun_item *item;
+	ipudp_list_tsa_item *tsa_i;
 	struct ipudp_dev_priv *priv = NULL;
 
 	spin_lock_bh(&ipudp_lock);
@@ -179,11 +181,29 @@ ipudp_del_tun(ipudp_viface_params *p, ipudp_tun_params *q) {
 
 			list_for_each_entry(item, &(priv->list_tun), list) {
 				if (q->tid == item->tun.tid) {
+					//delete the tunnel
 					list_del_rcu(&(item->list));
 					priv->tun_count --;
+					
+					//delete the referenced tsa if no other
+					//tunnel is referencing it
+					tsa_i = __tsa_already_in_list(priv, &(item->tun));
+					if (tsa_i) {
+						if (tsa_i->tsa.ref_cnt == 1) {
+							list_del_rcu(&(tsa_i->list));
+							priv->tsa_count --;
+						}
+						else  {
+							tsa_i->tsa.ref_cnt --;
+							tsa_i = NULL;
+						}
+					}
 					spin_unlock_bh(&ipudp_lock);	
 					synchronize_rcu();
 					kfree(item);
+					if (tsa_i) {
+						kfree(tsa_i);
+					}
 					return IPUDP_OK;
 				}
 			}
@@ -993,7 +1013,8 @@ err_return:
 	return err;	
 }
 
-static int 
+ 
+ipudp_list_tsa_item *
 __tsa_already_in_list(ipudp_dev_priv *p, ipudp_tun_params *tun) {
 	ipudp_list_tsa_item *t;
 	
@@ -1003,16 +1024,16 @@ __tsa_already_in_list(ipudp_dev_priv *p, ipudp_tun_params *tun) {
 						(t->tsa.dev_idx == tun->dev_idx) &&
 								(t->tsa.port == tun->srcport) )	
 
-				return 1;
+				return t;
 		}
 		else {
 			if (  !memcmp(t->tsa.u.v6addr,tun->u.v6p.src,16) &&
 							(t->tsa.dev_idx == tun->dev_idx) &&
 									(t->tsa.port == tun->srcport) )	
-				return 1;
+				return t;
 		}
 	}
-	return 0;
+	return NULL;
 }
 
 static int 
@@ -1023,21 +1044,28 @@ __ipudp_create_and_add_tsa(ipudp_dev_priv *p, ipudp_tun_params *tun) {
 
 	memset(&tsa,0,sizeof(tsa));
 
-	//check if tsa already in the list
-	if (__tsa_already_in_list(p, tun))
-		goto done;
-
 	if (p->tsa_count == p->max_tsa)	
 		return IPUDP_ERR_TSA_MAX;
 
+	//check if tsa already in the list
+	t = __tsa_already_in_list(p, tun);
+
+	if (t) {
+		t->tsa.ref_cnt++;
+		goto done;
+	}
+
 	if ((ret = __tsa_set_and_reserve_port(tun, &tsa)))
 		return ret;
+	
+	tsa.ref_cnt = 1;
 
 	t = (ipudp_list_tsa_item *)kmalloc(sizeof(*t), GFP_ATOMIC);
 	memcpy(&(t->tsa), &tsa, sizeof(tsa));
 
 
 	list_add_rcu(&(t->list), &(p->list_tsa));
+
 	p->tsa_count ++;
 
 done:
@@ -1055,13 +1083,28 @@ __tun_equal(ipudp_tun_params *p, ipudp_tun_params *q) {
 			//same af
 			(p->af == q->af) &&
 			//same addresses
-			(!(memcmp(&(p->u),&(q->u),16)))
+			(!(memcmp(&(p->u),&(q->u),32)))
 	   )
 		return 1;
 	else 
 		return 0;
 }
 
+static int
+__tun_already_in_list(struct list_head *lhead, ipudp_tun_params *tun) {
+	ipudp_list_tun_item *t;
+
+	if (list_empty(lhead))
+		return 0;
+
+	list_for_each_entry(t, lhead, list) {	
+		if(__tun_equal(&(t->tun), tun)) {
+			return IPUDP_ERR_TUN_EXISTS;	
+		}
+	}
+
+	return 0;
+}
 
 static int 
 __list_tun_insert(ipudp_list_tun_item *new, struct list_head *lhead) {
@@ -1075,10 +1118,6 @@ __list_tun_insert(ipudp_list_tun_item *new, struct list_head *lhead) {
 
 	list_for_each(p, lhead) {
 		item = list_entry(p, ipudp_list_tun_item, list);
-	
-		//if tun already in return error
-		if(__tun_equal(&(item->tun),&(new->tun)))
-			return IPUDP_ERR_TUN_EXISTS;	
 
 		if (item->tun.tid != new->tun.tid) {
 			goto done;
@@ -1098,6 +1137,7 @@ ipudp_bind_tunnel(ipudp_viface_params *p, ipudp_tun_params *tun) {
 	ipudp_list_tun_item *item;
 	struct ipudp_dev_priv *priv;
 
+
 	item = (ipudp_list_tun_item *)kmalloc(sizeof(*item), GFP_ATOMIC);
 	memcpy(&(item->tun), tun, sizeof(*tun));
 	
@@ -1116,7 +1156,10 @@ ipudp_bind_tunnel(ipudp_viface_params *p, ipudp_tun_params *tun) {
 		goto err_ret;
 	}
 
-	//check if tun parameters are not specified
+	//check tun parameters
+	if ((ret = __tun_already_in_list(&(priv->list_tun), tun)))
+		goto err_ret;
+
 	if(  (( __tun_src_is_null(tun)) && (!(tun->dev_idx)))
 		|| __tun_dst_is_null(tun) || (!(tun->destport)) 
 						|| (!(tun->srcport)) )
@@ -1125,7 +1168,11 @@ ipudp_bind_tunnel(ipudp_viface_params *p, ipudp_tun_params *tun) {
 		goto err_ret;
 	}
 
-	
+	if (priv->params.af_out != tun->af) {
+		ret = IPUDP_ERR_TUN_BAD_PARAMS;
+		goto err_ret;
+	}
+
 	/* reserve listening port and add tsa to list */
 	if ((ret = __ipudp_create_and_add_tsa(priv, tun))) 
 		goto err_ret;
