@@ -23,7 +23,7 @@ void usage_dev() {
 	printf(	"dev help:\n"
 		"add ipudp virtual interface:\n"
 		"ipudp_conf -a dev -N <dev_name> "
-		"-M <fixed|multiplexed> -P <v4|v6>\n"
+		"-M <fixed|multi_v4> -P <v4|v6>\n"
 		"del ipudp virtual interface:\n"
 		"ipudp_conf -d dev -N <dev_name>\n"
 	);
