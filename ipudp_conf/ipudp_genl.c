@@ -286,7 +286,6 @@ do_cmd_add_viface(ipudp_viface_params *p){
 		printf("Viface %s successfully added\n", p->name);
 	}
 
-
 	return ret;
 }
 

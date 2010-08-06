@@ -27,9 +27,6 @@ genl_family ipudp_gnl_family = {
 	.maxattr = IPUDP_A_MSG_MAX,
 };
 
-static char *
-module_info = "ipudp module version 0.1, genl version 0.1";
-
 static void *
 extract_nl_attr(const struct genl_info *info, const int atype){
 	struct nlattr *na;
@@ -104,42 +101,6 @@ send_nl_msg(const int command, const unsigned int n_data, u8 msg_type,
 	}
 
 	return 0;
-}
-
-
-/* nl cmd callback */
-/* TODO remove it */
-static int 
-ipudp_genl_do_module_test(struct sk_buff *skb, struct genl_info *info){
-	struct ipudp_nl_msg_attr attr[2];
-	int n_attr = 0;
-	__u32 ret_code;
-	char *msg;
-#if 0
-	printk("ipudp_genl: Module Info Msg Received\n");
-
-	printk("\n\t ---> in_irq():      \t%lu", in_irq());
-	printk("\n\t ---> in_softirq():  \t%lu", in_softirq());
-	printk("\n\t ---> in_interrupt():\t%lu", in_interrupt());
-	printk("\n\t ---> preemptible(): \t%d", preemptible());
-
-	if (preemptible())
-		printk("preemptible\n");
-	if in_atomic() {
-		printk("in atomic\n");
-	};
-#endif
-
-	msg = (char *)extract_nl_attr(info, IPUDP_A_STRING);
-	printk("ipudp_genl_do_module_info: received %s",msg);
-
-	set_msg_attr(&attr[n_attr], IPUDP_A_RET_CODE, 
-	&ret_code, sizeof(ret_code), 0, &n_attr);
-
-	set_msg_attr(&attr[n_attr], IPUDP_A_STRING, 
-	module_info, strlen(module_info), 1, &n_attr);
-
-	return send_nl_msg(IPUDP_C_MODULE_TEST, n_attr, MSG_REPLY, attr, info);	
 }
 
 static int 
@@ -477,15 +438,6 @@ done:
 
 /* genl_ops for each message type */
 static struct 
-genl_ops ipudp_gnl_ops_module_test = {
-	.cmd = IPUDP_C_MODULE_TEST,
-	.flags = 0,
-	.policy = ipudp_genl_policy,
-	.doit = ipudp_genl_do_module_test,
-	.dumpit = NULL,
-}; //TODO remove this
-
-static struct 
 genl_ops ipudp_gnl_ops_add = {
 	.cmd = IPUDP_C_ADD,
 	.flags = 0,
@@ -521,9 +473,7 @@ ipudp_genl_register(void){
 		printk("ipudp_genl_register: error registering genl family\n");
 		return err;
 	}
-	
-	if ((err = genl_register_ops(&ipudp_gnl_family, &ipudp_gnl_ops_module_test)) != 0)
-		goto reg_err;
+
 	if ((err = genl_register_ops(&ipudp_gnl_family, &ipudp_gnl_ops_add)) != 0)
 		goto reg_err;
 	if ((err = genl_register_ops(&ipudp_gnl_family, &ipudp_gnl_ops_del)) != 0)

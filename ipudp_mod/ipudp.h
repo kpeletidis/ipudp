@@ -111,13 +111,10 @@ _ipudp_af_inet {
 	IPV6,
 }ipudp_af_inet;
 
-/*TODO only fixed and multi and add a fw_policy_mode?*/
 typedef enum
 _ipudp_viface_mode {
 	MODE_FIXED = 1,
 	MODE_MULTI_APP_V4,
-	MODE_MULTI_APP_V6,
-	MODE_MULTI_FWMARK,
 	/* TODO EXTENSIBLE */
 }ipudp_viface_mode;
 
@@ -145,7 +142,6 @@ _ipudp_nl_cmd_spec {
 	CMD_S_RULE,
 }ipudp_nl_cmd_spec;
 
-
 //ipudp denl attributes
 enum 
 IPUDP_GNL_ATTRIBUTES{
@@ -167,7 +163,6 @@ typedef enum
 IPUDP_GNL_COMMANDS{
 	IPUDP_C_UNSPEC, 	//do not touch, this is for the commands order
 	IPUDP_C_UNSPEC2,	//do not touch, this is for the commands order TODO fix this - useless..
-	IPUDP_C_MODULE_TEST,		//debug
 	IPUDP_C_ADD,
 	IPUDP_C_DEL,
 	IPUDP_C_GET,	

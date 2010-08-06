@@ -45,7 +45,6 @@ void parse_nl_attrs();
 void printResponse(const unsigned int);
 
 /*CMDS*/
-int do_cmd_module_test(void);
 int do_cmd_add_viface(ipudp_viface_params *);
 int do_cmd_del_viface(ipudp_viface_params *);
 

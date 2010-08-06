@@ -49,6 +49,7 @@ void usage_tsa() {
 	);
 	exit(-1);
 }
+
 void usage_list() {
 	printf( "list help:\n"
 		"ipudp_conf -l <type> [-N <dev_name>] \n"
@@ -308,7 +309,7 @@ main(int argc, char **argv){
 
 		case IPUDP_C_DEL:
 			if (cmd_attr == RULE)
-				/*TODO*/;			
+				/*TODO*/;
 			else if (cmd_attr == TSA){
 				ipudp_tsa_params p;
 				ipudp_viface_params q;
