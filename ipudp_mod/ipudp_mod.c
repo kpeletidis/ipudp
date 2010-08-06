@@ -191,6 +191,7 @@ ipudp_del_tun(ipudp_viface_params *p, ipudp_tun_params *q) {
 					if (tsa_i) {
 						if (tsa_i->tsa.ref_cnt == 1) {
 							list_del_rcu(&(tsa_i->list));
+							sock_release(tsa_i->tsa.sock);
 							priv->tsa_count --;
 						}
 						else  {
