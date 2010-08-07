@@ -50,6 +50,15 @@ void usage_tsa() {
 	exit(-1);
 }
 
+void usage_rule() {
+	printf( "rule help:\n"
+		"add ipudp rule:\n"
+		"ipudp_conf -a rule -N <viface_name> -M <mode> -I <tid> [mode specific rule]\n"
+		"Rules:\n"
+		"For MODE_MULTI_V4 set the destination address of the rule with -D <ip_addr>\n"
+	);
+	exit(-1);
+}
 void usage_list() {
 	printf( "list help:\n"
 		"ipudp_conf -l <type> [-N <dev_name>] \n"

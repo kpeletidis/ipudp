@@ -64,6 +64,10 @@ ipudp_ret_code{
 	IPUDP_ERR_TSA_SOCK_CREATE,	
 	IPUDP_ERR_TSA_SOCK_BIND,
 	IPUDP_ERR_TSA_MAX,
+	
+	IPUDP_ERR_RULE_BAD_PARAMS,
+	IPUDP_ERR_RULE_NOT_FOUND,
+	IPUDP_ERR_RULE_MAX,
 };
 
 struct 
@@ -114,7 +118,7 @@ _ipudp_af_inet {
 typedef enum
 _ipudp_viface_mode {
 	MODE_FIXED = 1,
-	MODE_MULTI_APP_V4,
+	MODE_MULTI_V4,
 	/* TODO EXTENSIBLE */
 }ipudp_viface_mode;
 
@@ -268,11 +272,27 @@ _ipudp_viface_params{
 	ipudp_af_inet af_out; //ip vers of outer header
 }ipudp_viface_params;
 
+/* ipudp forwarding rules structs */
+#define IPUDP_CONF_MAX_RULE_MULTI_V4 1024
+
+//this rule type binds a destination ipv4 address to a tunnel
+//MODE_MULTI_V4
+typedef struct
+_ipdup_rule_multi_v4 {
+	struct list_head list;
+	__u32 dest;
+	int id;		//unique id for the rule
+	int tun_id;	//tid of the related tunnel
+	ipudp_tun_params *tun;
+} ipudp_rule_multi_v4;
+
 #ifndef USERSPACE
 typedef struct 
 ipudp_dev_priv {
 	ipudp_viface_params params;
-	void * fw_table; 			//forwarding table
+	void * fw_rules; 			//forwarding rules
+	int rule_count;
+	int max_rule;
 	struct list_head list_tsa;	//TSA list	
 	int tsa_count;
 	int max_tsa;
@@ -287,10 +307,15 @@ ipudp_dev_priv {
 	void (*fw_update)(struct sk_buff *b, void *p); //XXX does it make sense?
 }ipudp_dev_priv;
 
+
 /* function prototypes */
 /* ipuudp_mod.c */
 int ipudp_add_viface(ipudp_viface_params *);
 int ipudp_del_viface(ipudp_viface_params *);
+
+int ipudp_add_rule(ipudp_viface_params *, void *);
+int ipudp_del_rule(ipudp_viface_params *, void *);
+
 
 struct list_head * ipudp_get_viface_list(void);
 int ipudp_get_viface_count(void);

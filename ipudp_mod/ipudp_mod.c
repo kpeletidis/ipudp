@@ -17,6 +17,7 @@ static ipudp_data *ipudp;
 static int __ipudp_init_priv_data(ipudp_dev_priv *);
 static void  ipudp_clean_priv(ipudp_dev_priv *);
 void ipudp_list_tsa_flush(ipudp_dev_priv *);
+void ipudp_list_rules_flush(ipudp_dev_priv *);
 void ipudp_list_tun_flush(ipudp_dev_priv *);
 
 ipudp_list_tsa_item *__tsa_already_in_list(ipudp_dev_priv *, ipudp_tun_params *);
@@ -107,6 +108,18 @@ ipudp_list_tsa_flush(ipudp_dev_priv *priv) {
 	return;
 }
 
+void 
+ipudp_list_rules_flush(ipudp_dev_priv *priv) {
+	ipudp_rule_multi_v4 *p, *q;
+	
+	list_for_each_entry_safe(p, q, &(priv->list_tsa), list) {
+		list_del(&(p->list));
+        kfree(p);
+	}
+
+	return;
+}
+
 //delete tsa by inode number for the associated socket
 int 
 ipudp_del_tsa(ipudp_viface_params *p, ipudp_tsa_params *q){
@@ -165,6 +178,43 @@ __list_dev_flush(void) {
 		kfree(p);
 	}
 }
+int
+ipudp_del_rule(ipudp_viface_params *p, void *rule) {
+	ipudp_dev *viface;
+	ipudp_dev_priv *priv;
+	ipudp_rule_multi_v4 *item, *q;
+
+
+	//TODO switch(priv->params->mode)	
+	q = (ipudp_rule_multi_v4 *)rule;
+
+	spin_lock_bh(&ipudp_lock);
+	list_for_each_entry(viface, ipudp->viface_list, list) {
+		if (!strcmp(p->name, viface->dev->name)) {
+			priv = netdev_priv(viface->dev);
+		
+			if (priv->fw_rules == NULL) {	
+					spin_unlock_bh(&ipudp_lock);	
+					return IPUDP_ERR_RULE_BAD_PARAMS;
+			}
+
+			list_for_each_entry(item, (struct list_head *)priv->fw_rules, list) {
+				if (q->id == item->id){
+					list_del_rcu(&item->list);
+					priv->rule_count --;
+					spin_unlock_bh(&ipudp_lock);
+					synchronize_rcu();
+					kfree(item);
+					return IPUDP_OK;
+				}
+			}
+			spin_unlock_bh(&ipudp_lock);	
+			return IPUDP_ERR_RULE_NOT_FOUND;
+		}
+	}
+	spin_unlock_bh(&ipudp_lock);
+	return IPUDP_ERR_DEV_NOT_FOUND;
+}
 
 // delete tunnel by tid
 int
@@ -199,6 +249,10 @@ ipudp_del_tun(ipudp_viface_params *p, ipudp_tun_params *q) {
 							tsa_i = NULL;
 						}
 					}
+					
+					//delete all rules pointing to this tunnel
+					//XXX TODO
+
 					spin_unlock_bh(&ipudp_lock);	
 					synchronize_rcu();
 					kfree(item);
@@ -409,7 +463,7 @@ ipudp_tunnel_xmit(struct sk_buff *skb, struct net_device *dev) {
 
 	rcu_read_lock();
 	
-	if (!(tun = p->fw_lookup(skb, p))) {
+	if (!(tun = p->fw_lookup(skb, p->fw_rules))) {
 		dev_kfree_skb(skb);
 		dev->stats.tx_dropped++;
 		dev->stats.tx_errors++;
@@ -517,8 +571,36 @@ static void
 ipudp_clean_priv(ipudp_dev_priv * p) {
 	ipudp_list_tun_flush(p);
 	ipudp_list_tsa_flush(p);
+		
+	if (p->params.mode == MODE_MULTI_V4) {
+		ipudp_list_rules_flush(p);
+		kfree(p->fw_rules);
+	}
 
 	return;
+}
+
+ipudp_tun_params * 
+ipudp_multi_4v_lookup(struct sk_buff *skb, void *fw_rules) {
+	ipudp_rule_multi_v4 *p;
+	struct iphdr *iph = (struct iphdr *)skb->data;
+	struct list_head *lhead = (struct list_head *)fw_rules;
+
+	if(skb->protocol != htons(ETH_P_IP))
+		return NULL;
+	
+	if (list_empty(lhead))
+		return NULL;
+
+	list_for_each_entry(p, lhead, list) {
+		//paranoic...
+		if (!p->tun) return NULL;
+
+		if (p->dest == iph->daddr) 
+				return p->tun;
+	}
+	
+	return NULL;
 }
 
 ipudp_tun_params * 
@@ -839,10 +921,10 @@ __ipudp_init_priv_data(ipudp_dev_priv *p) {
 
 	switch(p->params.mode) {
 		case MODE_FIXED:
-			p->fw_table = NULL;
+			p->fw_rules = NULL;
 			p->fw_lookup = ipudp_fixed_out_tun;
 			p->fw_update = NULL;
-			 	if (p->params.af_out == IPV4) {
+			if (p->params.af_out == IPV4) {
 				p->tun_xmit = ipudp_tun4_xmit;
 				p->tun_recv = ipudp_tun4_recv;
 			}
@@ -855,20 +937,44 @@ __ipudp_init_priv_data(ipudp_dev_priv *p) {
 				goto done;
 			}
 
-			//XXX put to 1
-			p->max_tun = 40;
-			p->max_tsa = 40;
+			//fixed mode: 1 tunnel (1 TSA)
+			p->max_tun = 1;
+			p->max_tsa = 1;
 			break;
+		case MODE_MULTI_V4: {
+			//this mode has a list of rules linearly inspected
+			struct list_head *rules;
+
+			if (p->params.af_out == IPV4) {
+				p->tun_xmit = ipudp_tun4_xmit;
+				p->tun_recv = ipudp_tun4_recv;
+			}
+			else {
+				ret = IPUDP_BAD_PARAMS;
+				goto done;
+			}
+
+			rules = kmalloc(sizeof(struct list_head), GFP_ATOMIC);
+			INIT_LIST_HEAD(rules);
+			p->fw_rules = rules;
+
+			p->fw_lookup = ipudp_multi_4v_lookup;
+			p->fw_update = NULL;  //XXX to think about this...
+
+			p->max_tun = 256;
+			p->max_tsa = 256;
+			p->max_rule = IPUDP_CONF_MAX_RULE_MULTI_V4;
+		
+			break;
+		}
 		default:
 			ret = IPUDP_BAD_PARAMS;
 			goto done;
 	}
-	//init tun list
-	p->list_tun.prev = &p->list_tun;
-	p->list_tun.next = &p->list_tun;
-	//init tsa list
-	p->list_tsa.prev = &p->list_tsa;
-	p->list_tsa.next = &p->list_tsa;
+	
+	
+	INIT_LIST_HEAD(&(p->list_tun));
+	INIT_LIST_HEAD(&(p->list_tsa));
 
 	return IPUDP_OK;
 
@@ -1107,6 +1213,8 @@ __tun_already_in_list(struct list_head *lhead, ipudp_tun_params *tun) {
 	return 0;
 }
 
+
+//TODO make a sub function for the following 2 insert()
 static int 
 __list_tun_insert(ipudp_list_tun_item *new, struct list_head *lhead) {
 	struct list_head *p = lhead;
@@ -1124,6 +1232,30 @@ __list_tun_insert(ipudp_list_tun_item *new, struct list_head *lhead) {
 			goto done;
 		}
 		(new->tun.tid)++;
+	}
+
+done:
+	list_add_rcu(&(new->list), p->prev);
+	return IPUDP_OK;
+}
+
+static int 
+__list_rule_multi_v4_insert(ipudp_rule_multi_v4 * new, struct list_head *lhead) {
+	struct list_head *p = lhead;
+	ipudp_rule_multi_v4 *entry;
+
+	new->id = 1;
+
+	if (list_empty(lhead))
+		goto done;
+
+	list_for_each(p, lhead) {
+		entry = list_entry(p, ipudp_rule_multi_v4, list);
+
+		if (entry->id != new->id) {
+			goto done;
+		}
+		(new->id)++;
 	}
 
 done:
@@ -1190,6 +1322,63 @@ ipudp_bind_tunnel(ipudp_viface_params *p, ipudp_tun_params *tun) {
 	return IPUDP_OK;
 	
 err_ret:
+	spin_unlock_bh(&ipudp_lock);
+	return ret;
+}
+
+int
+ipudp_add_rule(ipudp_viface_params *p, void *rule) {
+	int ret;
+	ipudp_dev *dev;
+	ipudp_dev_priv	*priv;
+	ipudp_list_tun_item	*tun_i;
+
+	spin_lock_bh(&ipudp_lock);
+
+	dev = __list_ipudp_dev_locate_by_name(p->name);
+
+	priv = netdev_priv(dev->dev);
+
+	if (priv->rule_count == priv->max_rule) {
+		ret = IPUDP_ERR_RULE_MAX;
+		goto done;
+	}
+			
+	if (priv->fw_rules == NULL) {	
+			ret = IPUDP_ERR_RULE_BAD_PARAMS;
+			goto done;
+	}
+
+	switch(priv->params.mode) {
+		case MODE_MULTI_V4: {
+			ipudp_rule_multi_v4 *new;
+			ipudp_rule_multi_v4 *r = (ipudp_rule_multi_v4 *)rule;
+			
+			list_for_each_entry(tun_i, &priv->list_tun, list) {
+				if (tun_i->tun.tid == r->tun_id) {
+
+					new = kzalloc(sizeof(ipudp_rule_multi_v4), GFP_ATOMIC);
+					new->dest = r->dest;
+
+					new->tun = &(tun_i->tun);
+					__list_rule_multi_v4_insert(new, (struct list_head *)priv->fw_rules);
+					priv->rule_count++;
+
+					ret = IPUDP_OK;
+					goto done;
+				}
+			}
+	
+			ret = IPUDP_ERR_RULE_BAD_PARAMS;
+			goto done;
+		}
+
+		default:
+			ret = IPUDP_ERR_RULE_BAD_PARAMS;
+			goto done;
+	}
+
+done:
 	spin_unlock_bh(&ipudp_lock);
 	return ret;
 }

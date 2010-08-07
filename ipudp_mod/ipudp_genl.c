@@ -163,7 +163,33 @@ ipudp_genl_do_add(struct sk_buff *skb, struct genl_info *info){
 				goto done;
 			}
 			ret_code = ipudp_bind_tunnel(viface, tun);
-		}		
+			break;
+		}	
+		case CMD_S_RULE:
+		{
+			ipudp_viface_params *viface = NULL;
+			void *rule = NULL;
+		
+			viface = (ipudp_viface_params *)
+				extract_nl_attr(info, IPUDP_A_VIFACE_PARAMS);
+
+			if (!viface) {
+				ret_code = IPUDP_BAD_PARAMS;	
+				goto done;
+			}
+
+			rule = (ipudp_tun_params *)
+				extract_nl_attr(info, IPUDP_A_RULE_PARAMS);
+
+			if (!rule) {
+				ret_code = IPUDP_BAD_PARAMS;	
+				goto done;
+			}
+			ret_code = ipudp_add_rule(viface, rule);
+			break;
+
+			break;	
+		}
 		break;
 		default:
 			ret_code = IPUDP_BAD_CMD_SPEC;	
@@ -415,7 +441,52 @@ ipudp_genl_do_list(struct sk_buff *skb, struct genl_info *info){
 		}
 		case CMD_S_RULE:
 		{ 
-			//TODO	
+			ipudp_dev_priv *priv = NULL;
+			
+			rcu_read_lock();
+			priv = ipudp_get_priv(list_params->dev_name);
+			
+			if (!priv) {
+				ret_code = IPUDP_ERR_DEV_NOT_FOUND;	
+				attr = kmalloc(sizeof(*attr), GFP_KERNEL);
+				set_msg_attr(&attr[n_attr], IPUDP_A_RET_CODE, &ret_code, 
+					sizeof(ret_code), 0, &n_attr);
+				rcu_read_unlock();
+				goto done;
+			}
+			switch(priv->params.mode) {
+				case MODE_MULTI_V4: {
+					ipudp_rule_multi_v4 *t;
+
+					listp = (struct list_head *)priv->fw_rules;
+					
+					list_params->n_items = priv->rule_count;
+	
+					attr = kmalloc(sizeof(*attr) * (list_params->n_items + 2), GFP_ATOMIC);
+			
+					ret_code = IPUDP_OK;
+					set_msg_attr(&attr[n_attr], IPUDP_A_RET_CODE, 
+						&ret_code, sizeof(ret_code), 0, &n_attr);
+					set_msg_attr(&attr[n_attr], IPUDP_A_LIST_PARAMS, 
+						list_params, sizeof(*list_params), 0, &n_attr);	
+				
+					list_for_each_entry(t, listp, list) {
+							set_msg_attr(&attr[n_attr], IPUDP_A_RULE_PARAMS, t, 
+															sizeof(*t), 0, &n_attr);
+					}
+		
+					rcu_read_unlock();
+					break;
+				}
+				default:
+					ret_code = IPUDP_ERR_RULE_BAD_PARAMS;	
+					attr = kmalloc(sizeof(*attr), GFP_KERNEL);
+					set_msg_attr(&attr[n_attr], IPUDP_A_RET_CODE, &ret_code, 
+						sizeof(ret_code), 0, &n_attr);
+					rcu_read_unlock();
+					goto done;
+			}
+			break;
 		}	
 		default: {
 			ret_code = IPUDP_BAD_CMD_SPEC;
