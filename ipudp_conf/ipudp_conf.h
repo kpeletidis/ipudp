@@ -55,6 +55,9 @@ int do_cmd_list(char *, ipudp_nl_cmd_spec);
 
 int do_cmd_del_tsa(ipudp_viface_params *, ipudp_tsa_params *);
 
+int do_cmd_add_rule(ipudp_viface_params *, void *, int);
+int do_cmd_del_rule(ipudp_viface_params *, ipudp_rule *);
+
 /* utlis */
 int get_iface_idx_by_name(char *);
 int get_iface_name_by_idx(int, char *);

@@ -276,14 +276,26 @@ _ipudp_viface_params{
 #define IPUDP_CONF_MAX_RULE_MULTI_V4 1024
 
 //this rule type binds a destination ipv4 address to a tunnel
+
+//common fileds
+typedef struct _ipudp_rule {
+	struct list_head list;
+	int type;	//same as ipudp_viface_mode
+	int id;		//unique id for the rule
+	int tun_id;	//tid of the related tunnel
+	ipudp_tun_params *tun;
+}ipudp_rule;
+
 //MODE_MULTI_V4
 typedef struct
 _ipdup_rule_multi_v4 {
 	struct list_head list;
-	__u32 dest;
+	int type;	//same as ipudp_viface_mode
 	int id;		//unique id for the rule
 	int tun_id;	//tid of the related tunnel
 	ipudp_tun_params *tun;
+	//match
+	__u32 dest;
 } ipudp_rule_multi_v4;
 
 #ifndef USERSPACE
@@ -314,7 +326,7 @@ int ipudp_add_viface(ipudp_viface_params *);
 int ipudp_del_viface(ipudp_viface_params *);
 
 int ipudp_add_rule(ipudp_viface_params *, void *);
-int ipudp_del_rule(ipudp_viface_params *, void *);
+int ipudp_del_rule(ipudp_viface_params *, ipudp_rule *);
 
 
 struct list_head * ipudp_get_viface_list(void);

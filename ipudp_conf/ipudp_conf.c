@@ -80,10 +80,11 @@ main(int argc, char **argv){
 	char *dest_addr = NULL;
 	u16 remote_port = 0;	
 	int tid = -1;
+	u32 rule_id = 0;
 	unsigned long inode = 0;
 	int c;
 
-	while((c = getopt(argc, argv, "a:d:s:l:R:L:S:D:N:U:M:T:P:I:K:"))!= -1) {
+	while((c = getopt(argc, argv, "a:d:s:l:R:L:S:D:N:U:M:T:P:I:K:J:"))!= -1) {
 		switch (c) {
 			case 'a':
 				cmd = IPUDP_C_ADD;
@@ -138,11 +139,10 @@ main(int argc, char **argv){
 			case 'M':	
 				if (!strcmp(optarg, "fixed"))
 					viface_mode = MODE_FIXED;	
-				//else if (!strcmp(optarg, "multi_app_v4"))
-				//	viface_mode = MULTI_APP_V4;
+				else if (!strcmp(optarg, "multi_v4"))
+					viface_mode = MODE_MULTI_V4;
 				else {
-					//printf("error: option -M arg can be: (fixed|multi_app_v4)\n");
-					printf("error: bad option -M arg. Only \"fixed\" mode supported\n");
+					printf("error: option -M arg can be: (fixed|multi_app_v4)\n");
 					exit(-1);
 				}	
 				break;
@@ -177,6 +177,10 @@ main(int argc, char **argv){
 			case 'K':
 				inode = (unsigned long)atol(optarg);
 				break;	
+			case 'J':
+				rule_id = (u32)atoi(optarg);
+				break;	
+
 			default:
 				usage();
 				break;
@@ -190,8 +194,61 @@ main(int argc, char **argv){
 		
 	switch (cmd) {
 		case IPUDP_C_ADD:
-			if (cmd_attr == RULE)
-				/*TODO*/;			
+			if (cmd_attr == RULE) {	
+				ipudp_viface_params p;
+				void *rp = NULL;
+				int size = 0;
+
+				if (!viface_name) { 
+					printf("Error: a viface must be specified\n");
+					usage_rule();	
+				}
+				memcpy(p.name, viface_name, MAX_IPUDP_DEV_NAME_LEN);
+
+				if (!viface_mode) { 
+					printf("Error: bad viface mode\n");
+					usage_rule();	
+				}
+				
+				if (tid < 0) { 
+					printf("Error: a tunnel id must be specified\n");
+					usage_rule();	
+				}
+				//parse rule parameters
+				if (viface_mode == MODE_MULTI_V4) {
+
+						ipudp_rule_multi_v4 rule;
+						u32 daddr_bin;
+						
+						memset(&rule,0,sizeof(rule));
+					
+						rule.type = viface_mode;
+						rule.tun_id = tid;
+
+						if (dest_addr) {
+							if (inet_pton(AF_INET, dest_addr, &daddr_bin) <= 0) {
+								printf("Error: expected valid ipv4 destination address\n");
+								usage_rule();	
+							}	
+							rule.dest = daddr_bin;
+						}			
+						else {
+							printf("Error: destination address must be specified\n");
+							usage_rule();	
+						}
+
+						rp = &rule;
+						size = sizeof(ipudp_rule_multi_v4);
+				}
+				else {
+						printf("Unsupported viface mode\n");
+						usage_rule();
+				}
+
+				if (do_cmd_add_rule(&p, rp, size) != 0)
+					printf("Error adding rule to iface %s\n", p.name);
+
+			}	
 			else if (cmd_attr == TSA)
 				/*TODO*/;
 			else if (cmd_attr == VIFACE)
@@ -201,7 +258,6 @@ main(int argc, char **argv){
 				memset(&p,0,sizeof(p));
 	
 				if (viface_name) { 
-
 					memset(p.name,0, MAX_IPUDP_DEV_NAME_LEN);
 					memcpy(p.name, viface_name, strlen(viface_name));
 				}
@@ -317,8 +373,30 @@ main(int argc, char **argv){
 			break;
 
 		case IPUDP_C_DEL:
-			if (cmd_attr == RULE)
-				/*TODO*/;
+			if (cmd_attr == RULE){
+				ipudp_rule p;
+				ipudp_viface_params q;
+
+				if (!viface_name){
+					printf("ipudp viface name must be specified\n");
+					usage_tsa();
+				}
+				else {
+					memset(&q,0,sizeof(q));	
+					memset(q.name,0, MAX_IPUDP_DEV_NAME_LEN);
+					memcpy(q.name, viface_name, strlen(viface_name));
+				}
+			
+				if (!rule_id) {
+					printf("rule id must be specified\n");
+					usage_rule();
+				}	
+				else 
+					p.id = rule_id;
+				
+				if (do_cmd_del_rule(&q, &p) != 0)
+					printf("Error removing rule %d for viface %s\n", rule_id, viface_name);
+			}
 			else if (cmd_attr == TSA){
 				ipudp_tsa_params p;
 				ipudp_viface_params q;

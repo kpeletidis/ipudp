@@ -301,6 +301,36 @@ ipudp_genl_do_del(struct sk_buff *skb, struct genl_info *info){
 					sizeof(*p), 0, &n_attr);
 			break;
 		}
+		case CMD_S_RULE:
+		{
+			ipudp_rule *p =  NULL;
+			ipudp_viface_params *q = NULL;
+
+			p = (ipudp_rule *)extract_nl_attr(info, IPUDP_A_RULE_PARAMS);
+			if (!p)	{	
+				ret_code = IPUDP_BAD_PARAMS;	
+				set_msg_attr(&attr[n_attr], IPUDP_A_RET_CODE, &ret_code, 
+						sizeof(ret_code), 0, &n_attr);
+				goto done;
+			}
+			
+			q = (ipudp_viface_params *)extract_nl_attr(info, IPUDP_A_VIFACE_PARAMS);
+			if (!q)	{	
+				ret_code = IPUDP_BAD_PARAMS;	
+				set_msg_attr(&attr[n_attr], IPUDP_A_RET_CODE, &ret_code, 
+						sizeof(ret_code), 0, &n_attr);
+				goto done;
+			}
+			
+			ret_code = ipudp_del_rule(q,p);
+	
+			set_msg_attr(&attr[n_attr], IPUDP_A_RET_CODE, &ret_code, 
+					sizeof(ret_code), 0, &n_attr);
+			set_msg_attr(&attr[n_attr], IPUDP_A_TUN_PARAMS, p, 
+					sizeof(*p), 0, &n_attr);
+			break;
+
+		}
 		default: {
 			ret_code = IPUDP_BAD_CMD_SPEC;	
 			set_msg_attr(&attr[n_attr], IPUDP_A_RET_CODE, &ret_code, 

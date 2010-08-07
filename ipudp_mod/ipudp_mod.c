@@ -179,14 +179,10 @@ __list_dev_flush(void) {
 	}
 }
 int
-ipudp_del_rule(ipudp_viface_params *p, void *rule) {
+ipudp_del_rule(ipudp_viface_params *p, ipudp_rule *rule) {
 	ipudp_dev *viface;
 	ipudp_dev_priv *priv;
-	ipudp_rule_multi_v4 *item, *q;
-
-
-	//TODO switch(priv->params->mode)	
-	q = (ipudp_rule_multi_v4 *)rule;
+	ipudp_rule *item;
 
 	spin_lock_bh(&ipudp_lock);
 	list_for_each_entry(viface, ipudp->viface_list, list) {
@@ -199,7 +195,7 @@ ipudp_del_rule(ipudp_viface_params *p, void *rule) {
 			}
 
 			list_for_each_entry(item, (struct list_head *)priv->fw_rules, list) {
-				if (q->id == item->id){
+				if (rule->id == item->id){
 					list_del_rcu(&item->list);
 					priv->rule_count --;
 					spin_unlock_bh(&ipudp_lock);
@@ -214,6 +210,26 @@ ipudp_del_rule(ipudp_viface_params *p, void *rule) {
 	}
 	spin_unlock_bh(&ipudp_lock);
 	return IPUDP_ERR_DEV_NOT_FOUND;
+}
+
+static void
+__list_detach_rules_to_tun(struct ipudp_dev_priv *priv, __u32 tid) {
+	ipudp_rule *rule;
+	
+	list_for_each_entry(rule, (struct list_head *)priv->fw_rules, list) {
+		if (rule->tun_id == tid) {
+			rule->tun = NULL;
+			rule->tun_id = 0;
+		}
+	}
+}
+
+static void
+__detach_rules_to_tun(struct ipudp_dev_priv *priv, __u32 tid) {
+	if (priv->params.mode == MODE_MULTI_V4)
+		__list_detach_rules_to_tun(priv, tid);
+	else
+		return;
 }
 
 // delete tunnel by tid
@@ -250,10 +266,11 @@ ipudp_del_tun(ipudp_viface_params *p, ipudp_tun_params *q) {
 						}
 					}
 					
-					//delete all rules pointing to this tunnel
-					//XXX TODO
+					//detach all rules pointing to this tunnel
+					__detach_rules_to_tun(priv, item->tun.tid);
 
 					spin_unlock_bh(&ipudp_lock);	
+
 					synchronize_rcu();
 					kfree(item);
 					if (tsa_i) {
@@ -593,7 +610,6 @@ ipudp_multi_4v_lookup(struct sk_buff *skb, void *fw_rules) {
 		return NULL;
 
 	list_for_each_entry(p, lhead, list) {
-		//paranoic...
 		if (!p->tun) return NULL;
 
 		if (p->dest == iph->daddr) 
@@ -1326,6 +1342,8 @@ err_ret:
 	return ret;
 }
 
+
+//TODO use ipudp_rule common struct
 int
 ipudp_add_rule(ipudp_viface_params *p, void *rule) {
 	int ret;
@@ -1359,8 +1377,9 @@ ipudp_add_rule(ipudp_viface_params *p, void *rule) {
 
 					new = kzalloc(sizeof(ipudp_rule_multi_v4), GFP_ATOMIC);
 					new->dest = r->dest;
-
+					new->type = r->type;
 					new->tun = &(tun_i->tun);
+					new->tun_id = r->tun_id;
 					__list_rule_multi_v4_insert(new, (struct list_head *)priv->fw_rules);
 					priv->rule_count++;
 

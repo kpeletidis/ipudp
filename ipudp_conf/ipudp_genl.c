@@ -19,9 +19,7 @@ struct 	genl_msg req, resp;
 /*TODO move this inside a the functions? */
 struct 	nlattr *nl_attr[IPUDP_A_MSG_MAX + 1];
 
-/* XXX TODO XXX use a function to init genl header */
-
-
+/* XXX TODO XXX group the code, use sub-functions */
 
 void print_response(const unsigned int);
 static int receive_response(void);
@@ -395,6 +393,59 @@ do_cmd_del_tun(ipudp_viface_params *q,ipudp_tun_params *p) {
 }
 
 
+//del rule by index
+int 
+do_cmd_del_rule(ipudp_viface_params *q, ipudp_rule *p) {
+	struct nlattr *na;
+	int ret;
+	ipudp_nl_cmd_spec cmd_spec = CMD_S_RULE;
+	
+	/* fill the header */
+	req.n.nlmsg_len 	= NLMSG_LENGTH(GENL_HDRLEN);
+	req.n.nlmsg_type 	= ipudp_fam_id;
+	req.n.nlmsg_flags 	= NLM_F_REQUEST;
+	req.n.nlmsg_seq 	= 0;
+	req.n.nlmsg_pid 	= getpid();
+	req.g.cmd 			= IPUDP_C_DEL;
+
+
+	/* first attribute - cmd specification: RULE */
+	na = (struct nlattr *) GENLMSG_DATA(&req);
+	set_nl_attr(na, IPUDP_A_CMD_SPEC, &cmd_spec, sizeof(int));
+	req.n.nlmsg_len += NLMSG_ALIGN(na->nla_len);
+
+	/* second attribute - RULE params */
+	na = (struct nlattr *) GENLMSG_NLA_NEXT(na);
+	set_nl_attr(na, IPUDP_A_RULE_PARAMS, p, sizeof(ipudp_rule));
+	req.n.nlmsg_len += NLMSG_ALIGN(na->nla_len);
+
+	/* third attribute - viface params */
+	na = (struct nlattr *) GENLMSG_NLA_NEXT(na);
+	set_nl_attr(na, IPUDP_A_VIFACE_PARAMS, q, sizeof(ipudp_viface_params));
+	req.n.nlmsg_len += NLMSG_ALIGN(na->nla_len);
+
+	/* send nl message */
+	if (sendto_fd(nl_sd, (char *) &req, req.n.nlmsg_len) < 0)  {
+		printf("ipudp_genl: error sending genl message\n");
+		return -1;
+	}
+
+	if ((receive_response()) < 0) {
+		printf("receive_response error!\n");
+		return -1;
+	}
+
+	parse_nl_attrs();
+	
+	if ((ret = *(int *)get_nl_data(IPUDP_A_RET_CODE)))	
+		printf("do_cmd_del_rule: error code: %d\n",ret);
+	else {
+		printf("rule %d for viface %s successfully removed\n", p->id, q->name);
+	}
+
+	return 0;
+}
+
 int 
 do_cmd_del_viface(ipudp_viface_params *p){
 	struct nlattr *na;
@@ -457,11 +508,14 @@ __print_viface_params(ipudp_viface_params *p) {
 		case MODE_FIXED:
 			strcat(mode,"fixed");
 			break;
+		case MODE_MULTI_V4:
+			strcat(mode,"multi_v4");
+			break;
 
 		//TODO extend it
 		
 		default:
-			printf("Unknown viface mode\n");
+			printf("Unknown viface mode %d\n", p->mode);
 			return;
 	}
 
@@ -572,6 +626,25 @@ __print_tsa_params(ipudp_tsa_params * data) {
 
 
 static void 
+__print_rule_params(ipudp_rule * data) {
+	switch(data->type) {
+		case MODE_MULTI_V4:{
+			char addr[16];
+			ipudp_rule_multi_v4 *p = (ipudp_rule_multi_v4 *)data;
+
+			inet_ntop(AF_INET, &(p->dest), addr, 16);
+
+			printf("rule %d, ip dest %s, tun id: %d\n", p->id, addr, p->tun_id);
+
+			break;
+		}
+		default:
+			//can't happen
+			break;
+	}
+}
+
+static void 
 __print_list_attr(ipudp_nl_cmd_spec cmd_spec, void *data) {
 
 	switch(cmd_spec) {
@@ -585,7 +658,7 @@ __print_list_attr(ipudp_nl_cmd_spec cmd_spec, void *data) {
 			__print_tsa_params((ipudp_tsa_params *)data);
 			break;
 		case CMD_S_RULE:
-			/*TODO*/
+			__print_rule_params((ipudp_rule *)data);
 			break;
 		default: //can't happen...
 			printf("Unknown cmd_type %d\n",cmd_spec);
@@ -761,3 +834,58 @@ do_cmd_add_tun(ipudp_viface_params *v, ipudp_tun_params *p){
 	return ret;
 }
 
+int 
+do_cmd_add_rule(ipudp_viface_params *v, void *rule, int size) {
+	struct nlattr *na;
+	//struct sockaddr_nl nladdr;
+	int ret;
+	ipudp_nl_cmd_spec cmd_spec = CMD_S_RULE;
+	
+	/* fill the header */
+	req.n.nlmsg_len 	= NLMSG_LENGTH(GENL_HDRLEN);
+	req.n.nlmsg_type 	= ipudp_fam_id;
+	req.n.nlmsg_flags 	= NLM_F_REQUEST;
+	req.n.nlmsg_seq 	= 0;
+	req.n.nlmsg_pid 	= getpid();
+	req.g.cmd 			= IPUDP_C_ADD;
+
+
+	/* first attribute - cmd specification: RULE */
+	na = (struct nlattr *) GENLMSG_DATA(&req);
+	set_nl_attr(na, IPUDP_A_CMD_SPEC, &cmd_spec, sizeof(int));
+	req.n.nlmsg_len += NLMSG_ALIGN(na->nla_len);
+
+	/* second attribute - viface params */
+	na = (struct nlattr *) GENLMSG_NLA_NEXT(na);
+	set_nl_attr(na, IPUDP_A_VIFACE_PARAMS, v, sizeof(ipudp_viface_params));
+	req.n.nlmsg_len += NLMSG_ALIGN(na->nla_len);
+
+	/* third attribute - rule params */
+	na = (struct nlattr *) GENLMSG_NLA_NEXT(na);
+	set_nl_attr(na, IPUDP_A_RULE_PARAMS, rule, size);
+	req.n.nlmsg_len += NLMSG_ALIGN(na->nla_len);
+
+	/* send nl message */
+	if (sendto_fd(nl_sd, (char *) &req, req.n.nlmsg_len) < 0)  {
+		printf("ipudp_genl: error sending genl message\n");
+		return -1;
+	}
+
+	if ((receive_response()) < 0) {
+		printf("receive_response error!\n");
+		return -1;
+	}
+	
+	parse_nl_attrs();
+	/* parse the response: 
+	in this case we expect a msg without attributes (OK)
+	or a message with IPUDP_A_ERROR_DESC (an error occurred)*/
+	if ((ret = *(int *)get_nl_data(IPUDP_A_RET_CODE))) {	
+		printf("do_cmd_add_rule: error code: %d\n",ret);
+	}
+	else {
+		printf("Rule successfully added\n");
+	}
+
+	return ret;
+}
