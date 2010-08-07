@@ -4,6 +4,8 @@
 #define COMP_LINUX_VERSION_CODE 132640
 
 //XXX TODO XXX set_msg_attr ugly 
+//XXX TODO XXX a lot of code can be grouped in subfunctions..
+
 static struct 
 nla_policy ipudp_genl_policy[__IPUDP_A_MSG_MAX] = {
 	[IPUDP_A_UNSPEC]	= { .type = NLA_STRING },

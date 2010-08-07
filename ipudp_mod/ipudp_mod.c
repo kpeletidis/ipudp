@@ -178,6 +178,9 @@ __list_dev_flush(void) {
 		kfree(p);
 	}
 }
+
+
+//XXX make general and call a callback to actually delete the rule TODO
 int
 ipudp_del_rule(ipudp_viface_params *p, ipudp_rule *rule) {
 	ipudp_dev *viface;
@@ -267,6 +270,7 @@ ipudp_del_tun(ipudp_viface_params *p, ipudp_tun_params *q) {
 					}
 					
 					//detach all rules pointing to this tunnel
+					//XXX not sure if it is better to automatically delete rules...
 					__detach_rules_to_tun(priv, item->tun.tid);
 
 					spin_unlock_bh(&ipudp_lock);	
@@ -1343,7 +1347,8 @@ err_ret:
 }
 
 
-//TODO use ipudp_rule common struct
+//XXX make it more general and call a callback to actually add the rule TODO
+//instead of having a switch() here.
 int
 ipudp_add_rule(ipudp_viface_params *p, void *rule) {
 	int ret;
