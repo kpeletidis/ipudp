@@ -8,9 +8,6 @@
 #include "ipudp_conf.h"
 #include <ipudp.h>
 
-ipudp_genl_cmd cmd = 0;
-int cmd_attr = 0;
-
 void usage(){
 	printf( "Usage: ipudp_conf -cmd_arg <cmd_opt>\n"
 		"Possible cmd_arg: ADD (-a) DEL (-d) GET (-g) LIST (-l)\n"
@@ -70,6 +67,8 @@ void usage_list() {
 
 int 
 main(int argc, char **argv){
+	ipudp_genl_cmd cmd = -1;
+	int cmd_attr = 0;
 	char *viface_name = NULL;
 	char *dev_name = NULL;
 	u32 mark = 0; 
@@ -83,6 +82,7 @@ main(int argc, char **argv){
 	u32 rule_id = 0;
 	unsigned long inode = 0;
 	int c;
+	int ret;
 
 	while((c = getopt(argc, argv, "a:d:s:l:R:L:S:D:N:U:M:T:P:I:K:J:"))!= -1) {
 		switch (c) {
@@ -244,10 +244,7 @@ main(int argc, char **argv){
 						printf("Unsupported viface mode\n");
 						usage_rule();
 				}
-int r;
-				r = do_cmd_add_rule(&p, rp, size);
-printf("r %d\n",r);
-					printf("error adding rule to iface %s\n", p.name);
+				ret = do_cmd_add_rule(&p, rp, size);
 
 			}	
 			else if (cmd_attr == TSA)
@@ -266,8 +263,7 @@ printf("r %d\n",r);
 				p.mode = viface_mode;
 				p.af_out = ip_vers;
 
-				if (do_cmd_add_viface(&p) != 0)
-					printf("error adding interface %s\n", p.name); 
+				ret = do_cmd_add_viface(&p);
 			}
 
 			else if (cmd_attr == TUN) 
@@ -368,8 +364,7 @@ printf("r %d\n",r);
 				else 
 					tun_params.tid = tid;
 				
-				if (do_cmd_add_tun(&viface_params, &tun_params) != 0)
-					printf("error adding tunnel to iface %s\n", viface_params.name); 
+				ret = do_cmd_add_tun(&viface_params, &tun_params);
 			}				
 			break;
 
@@ -395,8 +390,7 @@ printf("r %d\n",r);
 				else 
 					p.id = rule_id;
 				
-				if (do_cmd_del_rule(&q, &p) != 0)
-					printf("error removing rule %d for viface %s\n", rule_id, viface_name);
+				ret = do_cmd_del_rule(&q, &p);
 			}
 			else if (cmd_attr == TSA){
 				ipudp_tsa_params p;
@@ -419,8 +413,7 @@ printf("r %d\n",r);
 				else 
 					p.ino = inode;
 				
-				if (do_cmd_del_tsa(&q, &p) != 0)
-					printf("error removing tsa %ld for viface %s\n",inode, viface_name);
+				ret = do_cmd_del_tsa(&q, &p);
 			}
 			else if (cmd_attr == VIFACE){
 					
@@ -441,8 +434,7 @@ printf("r %d\n",r);
 					usage_dev();
 				}
 
-				if (do_cmd_del_viface(&p) != 0)
-					printf("error removing interface %s\n",viface_name);
+				ret = do_cmd_del_viface(&p);
 			}
 			else if (cmd_attr == TUN) {
 				ipudp_tun_params p;
@@ -466,8 +458,7 @@ printf("r %d\n",r);
 				else 
 					p.tid = tid;
 				
-				if (do_cmd_del_tun(&q, &p) != 0)
-					printf("error removing tunnel %d for viface %s\n",tid, viface_name);
+				ret = do_cmd_del_tun(&q, &p);
 			}
 				
 			break;
@@ -481,7 +472,7 @@ printf("r %d\n",r);
 				}
 			}
 
-			if (do_cmd_list(viface_name, cmd_attr) != 0)
+			ret = do_cmd_list(viface_name, cmd_attr);
 					printf("error getting list\n");
 			break;	
 
@@ -491,5 +482,5 @@ printf("r %d\n",r);
 			break;
 	}
 
-	return 0;
+	return ret;
 }
