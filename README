@@ -209,43 +209,72 @@ nc 192.168.0.1 9999
 
 #SPOKE1 configuration
 #interfaces:
-#eth0: ipv4 10.0.0.100/24, ipv6 2001::1/64
-#VPN ipv4 address: 192.168.0.2
+#eth0: ipv4 23.250.57.86/21
+#VPN ipv4 address: 10.0.0.2
 #IPUDP tunnel: source port 50000, remote port 60000
+
+#add viface
+ipudp_conf -a dev
+ifconfig ipudp0 10.0.0.2
+
+#add tunnel
+ipudp_conf -a tun -S 23.250.57.86 -D 23.250.57.85 -L 50000 -R 60000 -N ipudp0
+
+
 
 #SPOKE2 configuration
 #interfaces:
-#eth0: ipv4 10.0.0.200/24, ipv6 2001::1/64
-#VPN ipv4 address: 192.168.0.3
+#eth0: ipv4 32.250.57.87/24
+#VPN ipv4 address: 10.0.0.3
 #IPUDP tunnel: source port 50001, remote port 60000
 
+#add viface
+ipudp_conf -a dev
+ifconfig ipudp0 10.0.0.3
+
+#add tunnel
+ipudp_conf -a tun -S 23.250.57.87 -D 23.250.57.85 -L 50001 -R 60000 -N ipudp0
 
 
 
 #HUB configuration
 #interfaces:
-#eth0: ipv4 10.0.0.1/24, ipv6 2001::1/64
-#VPN ipv4 address: 192.168.0.1
+#eth0: ipv4 23.250.57.85/21
+#VPN ipv4 address: 10.0.0.1
 
 #add viface
 ipudp_conf -a dev -M multi_v4
-ifconfig ipudp0 192.168.0.1
+ifconfig ipudp0 10.0.0.1
+
+#if not already enabled
+#if you want, you can also disable forwarding for non encapsulated packets.
+#iptables -A FORWARD !-i ipudp0 -j DROP
+
+echo 1 > /proc/sys/net/ipv4/ip_forward 
+
+#do this otherwise for any tunneled packet to 10.0.0.x
+#HUB will send a ICMP redirect: new nexthop 10.0.0.x
+echo 0 > /proc/sys/net/ipv4/conf/ipudp0/send_redirects
+
 
 #add tunnel - this will have tid = 1
-ipudp_conf -a tun -S 10.0.0.1 -D 10.0.0.100 -L 60000 -R 50000 -N ipudp0
+ipudp_conf -a tun -S 23.250.57.85 -D 23.250.57.86 -L 60000 -R 50000 -N ipudp0
 
 #add tunnel - this will have tid = 2
-ipudp_conf -a tun -S 10.0.0.1 -D 10.0.0.101 -L 60000 -R 50001 -N ipudp0
+ipudp_conf -a tun -S 23.250.57.85 -D 23.250.57.87 -L 60000 -R 50001 -N ipudp0
 
 #add rules
-ipdup_conf -a rule -M multi_v4 -D 192.168.0.2 -I 1
-ipdup_conf -a rule -M multi_v4 -D 192.168.0.3 -I 2
+ipudp_conf -a rule -N ipudp0 -M multi_v4 -D 10.0.0.2 -I 1
+ipudp_conf -a rule -N ipudp0 -M multi_v4 -D 10.0.0.3 -I 2 
 
 
+
+
+
+###TODO
 
 ###TEST
 # Interaction with TINC
-
 
 ###TEST
 # ipudp tunnel between a a host with private address and a server with access 

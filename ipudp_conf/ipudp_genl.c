@@ -33,6 +33,72 @@ set_nl_attr(struct nlattr *na, const unsigned int type,
 	memcpy(GENLMSG_NLA_DATA(na), data, length);
 }
 
+static void
+__print_ipudp_error(int err) {
+	switch(err) {
+		case IPUDP_BAD_MSG_FORMAT:
+			printf("error: bad ipudp genl message format\n");
+			break;
+		case IPUDP_BAD_CMD_SPEC:
+			printf("error: bad ipudp genl command spedification\n");
+			break;
+		case IPUDP_BAD_PARAMS:
+			printf("error: bad ipudp genl message attribute\n");
+			break;
+		case IPUDP_ERR_DEV_ALLOC:	
+			printf("error: couldn't allocate device\n");
+			break;
+		case IPUDP_ERR_DEV_MAX:
+			printf("error: too many ipudp devices\n");
+			break;
+		case IPUDP_ERR_DEV_NAME:
+			printf("error: bad device name\n");
+			break;
+		case IPUDP_ERR_DEV_REG:
+			printf("error: coudn't register device\n");
+			break;
+		case IPUDP_ERR_DEV_NOT_FOUND:
+			printf("error: device not found\n");
+			break;
+		case IPUDP_ERR_TUN_BAD_PARAMS:
+			printf("error: bad tunnel parameters\n");
+			break;
+		case IPUDP_ERR_TUN_MAX:
+			printf("error: too many ipudp tunnels\n");
+			break;
+		case IPUDP_ERR_TUN_NOT_FOUND:
+			printf("error: tunnel not found\n");
+			break;
+		case IPUDP_ERR_TUN_EXISTS:
+			printf("error: tunnel exists\n");
+			break;
+		case IPUDP_ERR_TSA_SOCK_CREATE:
+			printf("error: couldn't create socket\n");
+			break;
+		case IPUDP_ERR_TSA_SOCK_BIND:
+			printf("error: couldn't bind TSA\n");
+			break;
+		case IPUDP_ERR_TSA_MAX:
+			printf("error: max TSA number exceeded\n");
+			break;
+		case IPUDP_ERR_RULE_BAD_PARAMS:
+			printf("error: bad rule arguments\n");
+			break;
+		case IPUDP_ERR_RULE_NOT_SUPPORTED:
+			printf("error: ipudp rules not supported by device\n");
+			break;
+		case IPUDP_ERR_RULE_NOT_FOUND:
+			printf("error: rule not found\n");
+			break;
+		case IPUDP_ERR_RULE_MAX:
+			printf("error: max rule number exceeded\n");
+			break;
+		default:
+			printf("error: unknown error\n");
+			break;
+	}
+}	
+
 static void 
 reset_nl_attrs(void){
 	int i;
@@ -73,7 +139,7 @@ create_nl_socket(const int groups){
 
 	fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_GENERIC);
 	if (fd < 0){
-		perror("Unable to create netlink socket");
+		perror("unable to create netlink socket");
 		return -1;
 	}
 
@@ -84,7 +150,7 @@ create_nl_socket(const int groups){
 
 	if (bind(fd, (struct sockaddr *) &local, sizeof(local)) < 0){
 		close(fd);
-		perror("Unable to bind netlink socket");
+		perror("unable to bind netlink socket");
 		return -1;
 	}
 	nl_sd = fd;
@@ -237,7 +303,6 @@ do_cmd_add_viface(ipudp_viface_params *p){
 	//struct sockaddr_nl nladdr;
 	int ret;
 	ipudp_nl_cmd_spec cmd_spec = CMD_S_VIFACE;
-	char *error_desc = NULL;
 	
 	/* fill the header */
 	req.n.nlmsg_len 	= NLMSG_LENGTH(GENL_HDRLEN);
@@ -273,15 +338,11 @@ do_cmd_add_viface(ipudp_viface_params *p){
 	/* parse the response: 
 	in this case we expect a msg without attributes (OK)
 	or a message with IPUDP_A_ERROR_DESC (an error occurred)*/
-	if ((ret = *(int *)get_nl_data(IPUDP_A_RET_CODE))) {	
-		printf("do_cmd_add_viface: error code: %d\n",ret);
-		
-		if ((error_desc = (char *)  get_nl_data(IPUDP_A_ERROR_DESC)))
-			printf("%s\n",error_desc);
-	}
+	if ((ret = *(int *)get_nl_data(IPUDP_A_RET_CODE)))
+		__print_ipudp_error(ret);
 	else {
 		p = (ipudp_viface_params *) get_nl_data(IPUDP_A_VIFACE_PARAMS);
-		printf("Viface %s successfully added\n", p->name);
+		printf("device %s successfully added\n", p->name);
 	}
 
 	return ret;
@@ -331,10 +392,9 @@ do_cmd_del_tsa(ipudp_viface_params *q,ipudp_tsa_params *p) {
 	parse_nl_attrs();
 	
 	if ((ret = *(int *)get_nl_data(IPUDP_A_RET_CODE)))	
-		printf("do_cmd_del_tsa: error code: %d\n",ret);
-	else {
+		__print_ipudp_error(ret);
+	else
 		printf("tsa %ld for viface %s successfully removed\n", p->ino, q->name);
-	}
 
 	return 0;
 }
@@ -383,11 +443,9 @@ do_cmd_del_tun(ipudp_viface_params *q,ipudp_tun_params *p) {
 	parse_nl_attrs();
 	
 	if ((ret = *(int *)get_nl_data(IPUDP_A_RET_CODE)))	
-		printf("do_cmd_del_tun: error code: %d\n",ret);
-	else {
-		//p = (ipudp_viface_params *) get_nl_data(IPUDP_A_TUN_PARAMS);
+		__print_ipudp_error(ret);
+	else
 		printf("tunnel %d for viface %s successfully removed\n", p->tid, q->name);
-	}
 
 	return 0;
 }
@@ -438,10 +496,9 @@ do_cmd_del_rule(ipudp_viface_params *q, ipudp_rule *p) {
 	parse_nl_attrs();
 	
 	if ((ret = *(int *)get_nl_data(IPUDP_A_RET_CODE)))	
-		printf("do_cmd_del_rule: error code: %d\n",ret);
-	else {
+		__print_ipudp_error(ret);
+	else
 		printf("rule %d for viface %s successfully removed\n", p->id, q->name);
-	}
 
 	return 0;
 }
@@ -484,9 +541,8 @@ do_cmd_del_viface(ipudp_viface_params *p){
 
 	parse_nl_attrs();
 	
-	if ((ret = *(int *)get_nl_data(IPUDP_A_RET_CODE))) {	
-		printf("do_cmd_del_viface: error code: %d\n",ret);
-	}
+	if ((ret = *(int *)get_nl_data(IPUDP_A_RET_CODE)))	
+		__print_ipudp_error(ret);
 	else {
 		p = (ipudp_viface_params *) get_nl_data(IPUDP_A_VIFACE_PARAMS);
 		printf("viface %s successfully removed\n", p->name);
@@ -495,7 +551,6 @@ do_cmd_del_viface(ipudp_viface_params *p){
 
 	return ret;
 }
-
 
 static void 
 __print_viface_params(ipudp_viface_params *p) {
@@ -528,14 +583,13 @@ __print_viface_params(ipudp_viface_params *p) {
 			break;
 	
 		default:
-			printf("Unknown af_out\n");
+			printf("unknown af_out\n");
 			return;
 	}
 	
-	printf("\tinterface %s, outer header %s, encapsulation mode %s\n",p->name, af, mode);
+	printf("%s, encap header %s, encap mode %s\n",p->name, af, mode);
 
 }
-
 
 static void 
 __print_tun_params(ipudp_tun_params * data) {
@@ -566,17 +620,16 @@ __print_tun_params(ipudp_tun_params * data) {
 
 	if (data->dev_idx) {
 		if (get_iface_name_by_idx(data->dev_idx, ifname) < 0) {
-			sprintf(temp,"underlying device index %d", data->dev_idx);
-			//printf("warning: error getting iface name from index. Are you root?\n");
+			sprintf(temp,"dev idx %d", data->dev_idx);
 		}
 		else 	
-			sprintf(temp,"underlying device %s", ifname);
+			sprintf(temp,"dev %s", ifname);
 	}
 	else
-		sprintf(temp,"source IP address %s", ip_src);
+		sprintf(temp,"src %s", ip_src);
 
-	printf("\ttunnel %d, %s, destination IP address %s, source UDP port %d, destination UDP port %d, mark %d\n",
-			data->tid, temp, ip_dest, ntohs(data->srcport), ntohs(data->destport), data->mark);
+	printf("tid %d, %s, dest %s, sport %d, dport %d\n",
+			data->tid, temp, ip_dest, ntohs(data->srcport), ntohs(data->destport));
 
 	return;
 }
@@ -608,22 +661,19 @@ __print_tsa_params(ipudp_tsa_params * data) {
 
 	if (data->dev_idx) {
 		if (get_iface_name_by_idx(data->dev_idx, ifname) < 0) {
-			sprintf(temp,"underlying device index %d", data->dev_idx);
-			printf("warning: error getting iface name from index. Are you root?\n");
+			sprintf(temp,"dev idx %d", data->dev_idx);
 		}
 		else 	
-			sprintf(temp,"underlying device %s", ifname);
+			sprintf(temp,"dev %s", ifname);
 	}
 	else
-		sprintf(temp,"source IP address %s", ip_src);
+		sprintf(temp,"src %s", ip_src);
 
-	printf("\ttsa: socket fd %ld, %s, source UDP port %d, device idx %d,ref cnt %d\n",
+	printf("tsa %ld, %s, sport %d, dev idx %d, ref cnt %d\n",
 			data->ino, temp, ntohs(data->port), data->dev_idx, data->ref_cnt);
 
 	return;
-
 }
-
 
 static void 
 __print_rule_params(ipudp_rule * data) {
@@ -634,7 +684,7 @@ __print_rule_params(ipudp_rule * data) {
 
 			inet_ntop(AF_INET, &(p->dest), addr, 16);
 
-			printf("rule %d, ip dest %s, tun id: %d\n", p->id, addr, p->tun_id);
+			printf("rule %d, dest %s, tun id %d\n", p->id, addr, p->tun_id);
 
 			break;
 		}
@@ -661,7 +711,7 @@ __print_list_attr(ipudp_nl_cmd_spec cmd_spec, void *data) {
 			__print_rule_params((ipudp_rule *)data);
 			break;
 		default: //can't happen...
-			printf("Unknown cmd_type %d\n",cmd_spec);
+			printf("unknown cmd_type %d\n",cmd_spec);
 			break;
 	}
 }
@@ -689,7 +739,7 @@ __parse_list(ipudp_nl_cmd_spec cmd_spec) {
 	ret_code = *(int*)data;
 	
 	if (ret_code) {
-			printf("do_cmd_list: error code %d\n", ret_code);
+			__print_ipudp_error(ret_code);
 			return 1;
 	}
 
@@ -705,12 +755,15 @@ __parse_list(ipudp_nl_cmd_spec cmd_spec) {
 		printf("do_cmd_list: error, expected IPUDP_A_LIST_PARAMS attribute\n");
 		return 1;
 	}
+
+	/*
 	if (cmd_spec != CMD_S_VIFACE) 
 		printf("list type %d for virtual interface %s, n_intems: %d\n", cmd_spec, 
 				list_params->dev_name, list_params->n_items);	
 	else 
 		printf("virtual interface list, n_intems: %d\n", list_params->n_items);	
-		
+	*/
+
 	while(data_len > 0){
 		na = (struct nlattr *) GENLMSG_NLA_NEXT(na);
 		data = GENLMSG_NLA_DATA(na);
@@ -778,7 +831,6 @@ do_cmd_add_tun(ipudp_viface_params *v, ipudp_tun_params *p){
 	//struct sockaddr_nl nladdr;
 	int ret;
 	ipudp_nl_cmd_spec cmd_spec = CMD_S_TUN;
-	char *error_desc = NULL;
 	
 	/* fill the header */
 	req.n.nlmsg_len 	= NLMSG_LENGTH(GENL_HDRLEN);
@@ -816,20 +868,13 @@ do_cmd_add_tun(ipudp_viface_params *v, ipudp_tun_params *p){
 	}
 	
 	parse_nl_attrs();
-	/* parse the response: 
-	in this case we expect a msg without attributes (OK)
-	or a message with IPUDP_A_ERROR_DESC (an error occurred)*/
-	if ((ret = *(int *)get_nl_data(IPUDP_A_RET_CODE))) {	
-		printf("do_cmd_add_tun: error code: %d\n",ret);
-		
-		if ((error_desc = (char *)  get_nl_data(IPUDP_A_ERROR_DESC)))
-			printf("%s\n",error_desc);
-	}
+
+	if ((ret = *(int *)get_nl_data(IPUDP_A_RET_CODE)))
+		__print_ipudp_error(ret);
 	else {
 		v = (ipudp_viface_params *) get_nl_data(IPUDP_A_TUN_PARAMS);
-		printf("Tunnel successfully added\n");
+		printf("tunnel successfully added\n");
 	}
-
 
 	return ret;
 }
@@ -877,15 +922,11 @@ do_cmd_add_rule(ipudp_viface_params *v, void *rule, int size) {
 	}
 	
 	parse_nl_attrs();
-	/* parse the response: 
-	in this case we expect a msg without attributes (OK)
-	or a message with IPUDP_A_ERROR_DESC (an error occurred)*/
-	if ((ret = *(int *)get_nl_data(IPUDP_A_RET_CODE))) {	
-		printf("do_cmd_add_rule: error code: %d\n",ret);
-	}
-	else {
-		printf("Rule successfully added\n");
-	}
+
+	if ((ret = *(int *)get_nl_data(IPUDP_A_RET_CODE)))	
+		__print_ipudp_error(ret);
+	else
+		printf("rule successfully added\n");
 
 	return ret;
 }

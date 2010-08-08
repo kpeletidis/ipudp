@@ -194,7 +194,7 @@ ipudp_del_rule(ipudp_viface_params *p, ipudp_rule *rule) {
 		
 			if (priv->fw_rules == NULL) {	
 					spin_unlock_bh(&ipudp_lock);	
-					return IPUDP_ERR_RULE_BAD_PARAMS;
+					return IPUDP_ERR_RULE_NOT_SUPPORTED;
 			}
 
 			list_for_each_entry(item, (struct list_head *)priv->fw_rules, list) {
@@ -1368,7 +1368,7 @@ ipudp_add_rule(ipudp_viface_params *p, void *rule) {
 	}
 			
 	if (priv->fw_rules == NULL) {	
-			ret = IPUDP_ERR_RULE_BAD_PARAMS;
+			ret = IPUDP_ERR_RULE_NOT_SUPPORTED;
 			goto done;
 	}
 
@@ -1393,12 +1393,12 @@ ipudp_add_rule(ipudp_viface_params *p, void *rule) {
 				}
 			}
 	
-			ret = IPUDP_ERR_RULE_BAD_PARAMS;
+			ret = IPUDP_ERR_TUN_NOT_FOUND;
 			goto done;
 		}
 
 		default:
-			ret = IPUDP_ERR_RULE_BAD_PARAMS;
+			ret = IPUDP_ERR_RULE_NOT_SUPPORTED;
 			goto done;
 	}
 
