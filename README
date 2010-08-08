@@ -157,25 +157,34 @@ EXAMPLES
 
 
 ### TEST 1 
-# 1 ipudp tunnel betwen 2 hosts on the same LAN
-# Form PC1 to PC2 the source port is 50000 and teh remote is 60000
+# 1 IPv4/UDP and 1 IPv6/UDP tunnel betwen 2 hosts on the same LAN
+# ipv4 tun from PC1 to PC2 the source port is 50000 and the remote is 60000
+# ipv6 tun from PC1 to PC2 the source port is 55000 and the remote is 65000
 
 #PC1 configuration
 #interfaces:
 #eth0: ipv4 10.0.0.1/24, ipv6 2001::1/64
 
-#add device
+#add devices
+ipudp_conf -a dev
 ipudp_conf -a dev
 
-#add tunnel
+#add v4 tunnel to ipudp0
 ipudp_conf -a tun -S 10.0.0.1 -D 10.0.0.3 -L 50000 -R 60000 -N ipudp0
 
-#configure virtual device
+#add v6 tunnel to ipudp1
+ipudp_conf -a tun -S 2001::1 -D 2001::3 -L 55000 -R 65000 -N ipudp1
+
+#configure virtual devices
 ifconfig ipdup0 192.168.0.1
 
+#Try ipv4 tunnel
 #put netcat in listening
-nc -l -s 192.168.0.1 -p 9999
+nc6 -l -s 192.168.0.1 -p 9999
 
+#Try ipv6 tunnel
+#put netcat in listening
+nc6 -l -s 192.168.100.1 -p 10000
 
 #PC3 configuration
 #interfaces:
@@ -183,15 +192,25 @@ nc -l -s 192.168.0.1 -p 9999
 
 #add device
 ipudp_conf -a dev
+ipudp_conf -a dev
 
-#add tunnel
+#add v4 tunnel to ipudp0
 ipudp_conf -a tun -S 10.0.0.3 -D 10.0.0.1 -L 60000 -R 50000 -N ipudp0 
 
-#configure virtual device
-ifconfig ipdup0 192.168.0.3
+#add v6 tunnel to ipudp1
+ipudp_conf -a tun -S 2001::1 -D 2001::3 -L 55000 -R 65000 -N ipudp1
 
-#netcat PC3
+#configure virtual devices
+ifconfig ipdup0 192.168.0.3
+ifconfig ipdup1 192.168.100.3
+
+#Try ipv4 tunnel
+#netcat PC3 
 nc 192.168.0.1 9999
+
+#Try ipv6 tunnel
+#netcat PC3 
+nc 192.168.100.1 10000
 
 
 
@@ -205,13 +224,20 @@ nc 192.168.0.1 9999
 # are behind NAT is a well known problem that can be solved in many 
 # ways. For example we can think to use TINC to open the flow at the 
 # NATS and then configuring the IPUDP tunnels with ipudp_conf.
+# In this example the spokes will simply configure a direct tunnel
+# with the HUB, as in TEST 1. 
+# The HUB (with a multi_v4 dev) will decapasulate packets received on 
+# registered tunnels and forward them (if not addressed to itself)
+# within the proper tunnel, according to the set of forwarding rules
+# set with ipudp_conf. 
 
-
-#SPOKE1 configuration
-#interfaces:
-#eth0: ipv4 23.250.57.86/21
-#VPN ipv4 address: 10.0.0.2
-#IPUDP tunnel: source port 50000, remote port 60000
+####################################################
+# SPOKE1 configuration
+# interfaces:
+# eth0: ipv4 23.250.57.86/21
+# VPN ipv4 address: 10.0.0.2
+# IPUDP tunnel: source port 50000, remote port 60000
+#####################################################
 
 #add viface
 ipudp_conf -a dev
@@ -220,13 +246,13 @@ ifconfig ipudp0 10.0.0.2
 #add tunnel
 ipudp_conf -a tun -S 23.250.57.86 -D 23.250.57.85 -L 50000 -R 60000 -N ipudp0
 
-
-
-#SPOKE2 configuration
-#interfaces:
-#eth0: ipv4 32.250.57.87/24
-#VPN ipv4 address: 10.0.0.3
-#IPUDP tunnel: source port 50001, remote port 60000
+###################################################
+# SPOKE2 configuration
+# interfaces:
+# eth0: ipv4 32.250.57.87/24
+# VPN ipv4 address: 10.0.0.3
+# IPUDP tunnel: source port 50001, remote port 60000
+###################################################
 
 #add viface
 ipudp_conf -a dev
@@ -235,22 +261,22 @@ ifconfig ipudp0 10.0.0.3
 #add tunnel
 ipudp_conf -a tun -S 23.250.57.87 -D 23.250.57.85 -L 50001 -R 60000 -N ipudp0
 
-
-
-#HUB configuration
-#interfaces:
-#eth0: ipv4 23.250.57.85/21
-#VPN ipv4 address: 10.0.0.1
+#############################
+# HUB configuration
+# interfaces:
+# eth0: ipv4 23.250.57.85/21
+# VPN ipv4 address: 10.0.0.1
+#############################
 
 #add viface
 ipudp_conf -a dev -M multi_v4
 ifconfig ipudp0 10.0.0.1
 
-#if not already enabled
+#if not already enabled...
+echo 1 > /proc/sys/net/ipv4/ip_forward 
+
 #if you want, you can also disable forwarding for non encapsulated packets.
 #iptables -A FORWARD !-i ipudp0 -j DROP
-
-echo 1 > /proc/sys/net/ipv4/ip_forward 
 
 #do this otherwise for any tunneled packet to 10.0.0.x
 #HUB will send a ICMP redirect: new nexthop 10.0.0.x
@@ -264,10 +290,11 @@ ipudp_conf -a tun -S 23.250.57.85 -D 23.250.57.86 -L 60000 -R 50000 -N ipudp0
 ipudp_conf -a tun -S 23.250.57.85 -D 23.250.57.87 -L 60000 -R 50001 -N ipudp0
 
 #add rules
+# vpn host 10.0.0.2 is behind tunnel 1
 ipudp_conf -a rule -N ipudp0 -M multi_v4 -D 10.0.0.2 -I 1
+
+# vpn host 10.0.0.3 is behind tunnel 2
 ipudp_conf -a rule -N ipudp0 -M multi_v4 -D 10.0.0.3 -I 2 
-
-
 
 
 
@@ -277,8 +304,8 @@ ipudp_conf -a rule -N ipudp0 -M multi_v4 -D 10.0.0.3 -I 2
 # Interaction with TINC
 
 ###TEST
-# ipudp tunnel between a a host with private address and a server with access 
-# to the internet. The server is used like a multiprotol proxy and it forwards 
+# ipudp tunnel between a a host with private address and a server. 
+# The server is used like a multiprotol proxy and it forwards 
 # IP packets from PC1 to a given CH and viceversa performing decapsulation and 
 # encapsuation.
 
