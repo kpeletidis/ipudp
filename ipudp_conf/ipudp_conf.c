@@ -473,7 +473,6 @@ main(int argc, char **argv){
 			}
 
 			ret = do_cmd_list(viface_name, cmd_attr);
-					printf("error getting list\n");
 			break;	
 
 		default:

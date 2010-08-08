@@ -161,22 +161,27 @@ EXAMPLES
 # ipv4 tun from PC1 to PC2 the source port is 50000 and the remote is 60000
 # ipv6 tun from PC1 to PC2 the source port is 55000 and the remote is 65000
 
+#########################################
 #PC1 configuration
 #interfaces:
 #eth0: ipv4 10.0.0.1/24, ipv6 2001::1/64
+#########################################
 
-#add devices
+#add v4 device - it will be ipudp0
 ipudp_conf -a dev
-ipudp_conf -a dev
+
+#add v6 device - it will be ipudp1
+ipudp_conf -a dev -P v6
 
 #add v4 tunnel to ipudp0
 ipudp_conf -a tun -S 10.0.0.1 -D 10.0.0.3 -L 50000 -R 60000 -N ipudp0
 
 #add v6 tunnel to ipudp1
-ipudp_conf -a tun -S 2001::1 -D 2001::3 -L 55000 -R 65000 -N ipudp1
+ipudp_conf -a tun -P v6 -S 2001::1 -D 2001::3 -L 55000 -R 65000 -N ipudp1
 
 #configure virtual devices
 ifconfig ipdup0 192.168.0.1
+ifconfig ipdup1 192.168.100.1
 
 #Try ipv4 tunnel
 #put netcat in listening
@@ -184,21 +189,25 @@ nc6 -l -s 192.168.0.1 -p 9999
 
 #Try ipv6 tunnel
 #put netcat in listening
-nc6 -l -s 192.168.100.1 -p 10000
+nc6 -l -s 192.168.100.1 -p 9999
 
+#########################################
 #PC3 configuration
 #interfaces:
 #eth0: ipv4 10.0.0.3/24, ipv6 2001::3/64
+#########################################
 
-#add device
+#add v4 device - it will be ipudp0
 ipudp_conf -a dev
-ipudp_conf -a dev
+
+#add v6 device - it will be ipudp1
+ipudp_conf -a dev -P v6
 
 #add v4 tunnel to ipudp0
 ipudp_conf -a tun -S 10.0.0.3 -D 10.0.0.1 -L 60000 -R 50000 -N ipudp0 
 
 #add v6 tunnel to ipudp1
-ipudp_conf -a tun -S 2001::1 -D 2001::3 -L 55000 -R 65000 -N ipudp1
+ipudp_conf -a tun -P v6 -S 2001::3 -D 2001::1 -L 65000 -R 55000 -N ipudp1
 
 #configure virtual devices
 ifconfig ipdup0 192.168.0.3
@@ -211,7 +220,6 @@ nc 192.168.0.1 9999
 #Try ipv6 tunnel
 #netcat PC3 
 nc 192.168.100.1 10000
-
 
 
 ###TEST 2
@@ -228,7 +236,7 @@ nc 192.168.100.1 10000
 # with the HUB, as in TEST 1. 
 # The HUB (with a multi_v4 dev) will decapasulate packets received on 
 # registered tunnels and forward them (if not addressed to itself)
-# within the proper tunnel, according to the set of forwarding rules
+# through the proper tunnel, according to the set of forwarding rules
 # set with ipudp_conf. 
 
 ####################################################

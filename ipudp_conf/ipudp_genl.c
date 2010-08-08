@@ -49,7 +49,7 @@ __print_ipudp_error(int err) {
 			printf("error: couldn't allocate device\n");
 			break;
 		case IPUDP_ERR_DEV_MAX:
-			printf("error: too many ipudp devices\n");
+			printf("error: too many devices\n");
 			break;
 		case IPUDP_ERR_DEV_NAME:
 			printf("error: bad device name\n");
