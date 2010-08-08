@@ -484,7 +484,7 @@ ipudp_tunnel_xmit(struct sk_buff *skb, struct net_device *dev) {
 
 	rcu_read_lock();
 	
-	if (!(tun = p->fw_lookup(skb, p->fw_rules))) {
+	if (!(tun = p->fw_lookup(skb, p))) {
 		dev_kfree_skb(skb);
 		dev->stats.tx_dropped++;
 		dev->stats.tx_errors++;
@@ -602,11 +602,11 @@ ipudp_clean_priv(ipudp_dev_priv * p) {
 }
 
 ipudp_tun_params * 
-ipudp_multi_4v_lookup(struct sk_buff *skb, void *fw_rules) {
+ipudp_multi_4v_lookup(struct sk_buff *skb, void *q) {
 	ipudp_rule_multi_v4 *p;
 	struct iphdr *iph = (struct iphdr *)skb->data;
-	struct list_head *lhead = (struct list_head *)fw_rules;
-
+	ipudp_dev_priv *priv = (ipudp_dev_priv *)q; 
+	struct list_head *lhead = (struct list_head *)(priv->fw_rules);
 	if(skb->protocol != htons(ETH_P_IP))
 		return NULL;
 	
