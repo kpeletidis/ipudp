@@ -216,9 +216,8 @@ nc 192.168.100.1 10000
 # different tunnels on a single IPUDP virtual device and how to
 # set the tunnelling rules, for simplicity the spokes and the HUB 
 # are on the same LAN. Create a IP/UDP tunnel when one or both hosts 
-# are behind NAT is a well known problem that can be solved in many 
-# ways. For example we can think to use TINC to open the flow at the 
-# NATS and then configuring the IPUDP tunnels with ipudp_conf.
+# are behind NAT is not supported yet (need some little modifications
+# in the module and a c/s simple program). 
 # In this example the spokes will simply configure a direct tunnel
 # with the HUB, as in TEST 1. 
 # The HUB (with a multi_v4 dev) will decapsulate packets received on 
@@ -294,9 +293,10 @@ ipudp_conf -a rule -N ipudp0 -M multi_v4 -D 10.0.0.3 -I 2
 
 
 ###TODO
+# NAT Traversal
+fixed device: in this case a possible solution could be to set up the tunnels after opneing a udp flow ad the NAT(s) with other tools. When only one host is behind NAT, whatever implementation of STUN can be used to discover the NATed udp port. Once the host behind NAT has discovered the address:port pair seen ata the other host, it is possbile to set-up the proper tunnels. When both hosts are behind NATs the approach could be the same, except that we need to use some sort of ICE agents.
 
-###TEST
-# Interaction with TINC
+multiple tunnels device: in this case we don't only need an client/daemon to automatically establish tunnels, but also some little modification to the module in order to allow a user space program to open a socket on the same port as the tunnel server and receive packets addressed to the same ip:port as the TSA but from tunnels not already added (which are instead currently decapsulated).
 
 ###TEST
 # ipudp tunnel between a a host with private address and a server. 
