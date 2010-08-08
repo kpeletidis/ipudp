@@ -200,18 +200,18 @@ main(int argc, char **argv){
 				int size = 0;
 
 				if (!viface_name) { 
-					printf("Error: a viface must be specified\n");
+					printf("error: a viface must be specified\n");
 					usage_rule();	
 				}
 				memcpy(p.name, viface_name, MAX_IPUDP_DEV_NAME_LEN);
 
 				if (!viface_mode) { 
-					printf("Error: bad viface mode\n");
+					printf("error: bad viface mode\n");
 					usage_rule();	
 				}
 				
 				if (tid < 0) { 
-					printf("Error: a tunnel id must be specified\n");
+					printf("error: a tunnel id must be specified\n");
 					usage_rule();	
 				}
 				//parse rule parameters
@@ -227,13 +227,13 @@ main(int argc, char **argv){
 
 						if (dest_addr) {
 							if (inet_pton(AF_INET, dest_addr, &daddr_bin) <= 0) {
-								printf("Error: expected valid ipv4 destination address\n");
+								printf("error: expected valid ipv4 destination address\n");
 								usage_rule();	
 							}	
 							rule.dest = daddr_bin;
 						}			
 						else {
-							printf("Error: destination address must be specified\n");
+							printf("error: destination address must be specified\n");
 							usage_rule();	
 						}
 
@@ -244,9 +244,10 @@ main(int argc, char **argv){
 						printf("Unsupported viface mode\n");
 						usage_rule();
 				}
-
-				if (do_cmd_add_rule(&p, rp, size) != 0)
-					printf("Error adding rule to iface %s\n", p.name);
+int r;
+				r = do_cmd_add_rule(&p, rp, size);
+printf("r %d\n",r);
+					printf("error adding rule to iface %s\n", p.name);
 
 			}	
 			else if (cmd_attr == TSA)
@@ -266,7 +267,7 @@ main(int argc, char **argv){
 				p.af_out = ip_vers;
 
 				if (do_cmd_add_viface(&p) != 0)
-					printf("Error adding interface %s\n", p.name); 
+					printf("error adding interface %s\n", p.name); 
 			}
 
 			else if (cmd_attr == TUN) 
@@ -281,14 +282,14 @@ main(int argc, char **argv){
 				memset(&tun_params,0,sizeof(tun_params));
 				
 				if (!viface_name){	
-					printf("Error: a viface must be specified\n");
+					printf("error: a viface must be specified\n");
 					usage_tun();	
 				}
 
 				memcpy(viface_params.name, viface_name, strlen(viface_name));
 				
 				if (!ip_vers) {
-					printf("Error: tun ip version must be specified\n");
+					printf("error: tun ip version must be specified\n");
 					usage_tun();	
 				}
 				tun_params.af = ip_vers;
@@ -297,14 +298,14 @@ main(int argc, char **argv){
 				if (src_addr) {
 					if (ip_vers == IPV4){	
 						if (inet_pton(AF_INET, src_addr, saddr_bin) <= 0) {
-							printf("Error: expected valid ipv4 tun source address\n");
+							printf("error: expected valid ipv4 tun source address\n");
 							usage_tun();	
 						}	
 						memcpy(&(tun_params.u.v4p.src),saddr_bin,4);
 					}
 					else {
 						if (inet_pton(AF_INET6, src_addr, saddr_bin) <= 0){	
-							printf("Error: expected valid ipv6 tun source address\n");
+							printf("error: expected valid ipv6 tun source address\n");
 							usage_tun();	
 						}
 						memcpy(tun_params.u.v6p.src,saddr_bin,16);
@@ -312,13 +313,13 @@ main(int argc, char **argv){
 				}
 
 				if ((!src_addr) && (!dev_name)) {
-					printf("Error: a real device name must be indicated to add tunnel when src address missing\n");
+					printf("error: a real device name must be indicated to add tunnel when src address missing\n");
 					usage_tun();	
 				}
 
 				if (dev_name) {
 					if((iface_idx = get_iface_idx_by_name(dev_name))<1) {
-						printf("Error: dev %s not found or you must be root\n", dev_name);
+						printf("error: dev %s not found or you must be root\n", dev_name);
 						usage_tun();	
 					}
 					tun_params.dev_idx = iface_idx;
@@ -328,21 +329,21 @@ main(int argc, char **argv){
 				if (dest_addr) {
 					if (ip_vers == IPV4){	
 						if (inet_pton(AF_INET, dest_addr, daddr_bin) <= 0) {
-							printf("Error: expected valid ipv4 tun destination address\n");
+							printf("error: expected valid ipv4 tun destination address\n");
 							usage_tun();	
 						}	
 						memcpy(&(tun_params.u.v4p.dest),daddr_bin,4);
 					}
 					else {
 						if (inet_pton(AF_INET6, dest_addr, daddr_bin) <= 0){	
-							printf("Error: expected valid ipv6 tun destination address\n");
+							printf("error: expected valid ipv6 tun destination address\n");
 							usage_tun();	
 						}
 						memcpy(tun_params.u.v6p.dest,daddr_bin,16);
 					}
 				}			
 				else {
-					printf("Error: tun destination address must be specified\n");
+					printf("error: tun destination address must be specified\n");
 					usage_tun();	
 				}
 				
@@ -351,13 +352,13 @@ main(int argc, char **argv){
 				else {
 					//even though it is not strictly necessary we prefer
 					//to allow only specified local port.. for now TODO
-					printf("Error: tun local port must be specified\n");
+					printf("error: tun local port must be specified\n");
 					usage_tun();	
 				}
 				if (remote_port)
 					tun_params.destport = htons(remote_port);			
 				else {
-					printf("Error: tun remote port must be specified\n");
+					printf("error: tun remote port must be specified\n");
 					usage_tun();	
 				}
 				if (mark)		
@@ -368,7 +369,7 @@ main(int argc, char **argv){
 					tun_params.tid = tid;
 				
 				if (do_cmd_add_tun(&viface_params, &tun_params) != 0)
-					printf("Error adding tunnel to iface %s\n", viface_params.name); 
+					printf("error adding tunnel to iface %s\n", viface_params.name); 
 			}				
 			break;
 
@@ -395,7 +396,7 @@ main(int argc, char **argv){
 					p.id = rule_id;
 				
 				if (do_cmd_del_rule(&q, &p) != 0)
-					printf("Error removing rule %d for viface %s\n", rule_id, viface_name);
+					printf("error removing rule %d for viface %s\n", rule_id, viface_name);
 			}
 			else if (cmd_attr == TSA){
 				ipudp_tsa_params p;
@@ -419,7 +420,7 @@ main(int argc, char **argv){
 					p.ino = inode;
 				
 				if (do_cmd_del_tsa(&q, &p) != 0)
-					printf("Error removing tsa %ld for viface %s\n",inode, viface_name);
+					printf("error removing tsa %ld for viface %s\n",inode, viface_name);
 			}
 			else if (cmd_attr == VIFACE){
 					
@@ -441,7 +442,7 @@ main(int argc, char **argv){
 				}
 
 				if (do_cmd_del_viface(&p) != 0)
-					printf("Error removing interface %s\n",viface_name);
+					printf("error removing interface %s\n",viface_name);
 			}
 			else if (cmd_attr == TUN) {
 				ipudp_tun_params p;
@@ -466,7 +467,7 @@ main(int argc, char **argv){
 					p.tid = tid;
 				
 				if (do_cmd_del_tun(&q, &p) != 0)
-					printf("Error removing tunnel %d for viface %s\n",tid, viface_name);
+					printf("error removing tunnel %d for viface %s\n",tid, viface_name);
 			}
 				
 			break;
@@ -481,7 +482,7 @@ main(int argc, char **argv){
 			}
 
 			if (do_cmd_list(viface_name, cmd_attr) != 0)
-					printf("Error getting list\n");
+					printf("error getting list\n");
 			break;	
 
 		default:

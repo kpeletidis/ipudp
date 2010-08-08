@@ -1360,16 +1360,21 @@ ipudp_add_rule(ipudp_viface_params *p, void *rule) {
 
 	dev = __list_ipudp_dev_locate_by_name(p->name);
 
+	if (!dev) {
+		ret = IPUDP_ERR_DEV_NOT_FOUND;
+		goto done;
+	}
+
 	priv = netdev_priv(dev->dev);
+			
+	if (priv->fw_rules == NULL) {	
+		ret = IPUDP_ERR_RULE_NOT_SUPPORTED;
+		goto done;
+	}
 
 	if (priv->rule_count == priv->max_rule) {
 		ret = IPUDP_ERR_RULE_MAX;
 		goto done;
-	}
-			
-	if (priv->fw_rules == NULL) {	
-			ret = IPUDP_ERR_RULE_NOT_SUPPORTED;
-			goto done;
 	}
 
 	switch(priv->params.mode) {

@@ -85,7 +85,7 @@ __print_ipudp_error(int err) {
 			printf("error: bad rule arguments\n");
 			break;
 		case IPUDP_ERR_RULE_NOT_SUPPORTED:
-			printf("error: ipudp rules not supported by device\n");
+			printf("error: rules not supported by device\n");
 			break;
 		case IPUDP_ERR_RULE_NOT_FOUND:
 			printf("error: rule not found\n");
