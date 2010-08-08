@@ -1,32 +1,20 @@
 IPUDP encapsulation module
 
 CURRENT STATUS:
-ipudp module and the related configuration tool ipdup_conf can be used to crete
-virtual network devices that perform ip-udp encapsulation. Packets routed through
-this network interfaces will be encapsulated in IP/UDP headers and sent to the 
-proper tunnel endpoint. 
-Ipudp module supports both IPv4 and IPv6 encapsulation. This means that packets
-can be encapsulated within IPv4/UDP and IPv6/UDP headers.
+ipudp module and the related configuration tool ipdup_conf can be used to create virtual network devices that perform ip-udp encapsulation. Packets routed through this network interfaces will be encapsulated in IP/UDP headers and sent to the proper tunnel endpoint.
+Ipudp module supports both IPv4 and IPv6 encapsulation. This means that packets can be encapsulated within IPv4/UDP and IPv6/UDP headers.
 
-As to the current status, ipudp module provides 2 virtual devices modes:
-1) FIXED mode: a single ipudp (v4 or v6) tunnel is bound to a virutal ipudp device.
-This type of virtual interface is dobule-stack, in the sense that we can assign both
-IPv4 and IPv6 address to the device and use it for both IPv4 and IPv6 applications.
+As to the current status, ipudp module provides 2 virtual devices modes: 
+1) FIXED mode: a single ipudp (v4 or v6) tunnel is bound to a virtual ipudp device. This type of virtual interface is double-stack, in the sense that we can assign both IPv4 and IPv6 address to the device and use it for both IPv4 and IPv6 applications.
 
-2) MULTI_V4 mode: multiple ipudp (v4 or v6) tunnels can be bound to this type of 
-virtual interface. For each encapsulated packet, the proper tunnel is choosen by a set
-of rules that bind the destination IP address of the inner packet, with a given tunnel.
-For this interface type, only IPv4 traffic is supported.
+2) MULTI_V4 mode: multiple ipudp (v4 or v6) tunnels can be bound to this type of virtual interface. For each encapsulated packet, the proper tunnel is chosen by a set of rules that bind the destination IP address of the inner packet, with a given tunnel. For this interface type, only IPv4 traffic is supported.
 
-The module can be extended to support other encapsulation modes with different i
-forwarding policies.
+The module can be extended to support other encapsulation modes with different forwarding policies.
 
-Ipudp module comes with ipudp_conf a configuration tool used to create, remove and list
-virutal devices, add to add, remove and list tunnels and rules. 
+Ipudp module comes with ipudp_conf a configuration tool used to create, remove and list virtual devices, add to add, remove and list tunnels and rules. 
 
 IMPORTANT:
-the module is at a very initial status and it hasn't been completly tested.
-I'm not 100% sure that it won't freeze your PC, so try it on virtual mahcines...
+the module is at a very initial status and it hasn't been completely tested. I'm not 100% sure that it won't freeze your PC, so try it on virtual machines...
 
 #####################################################################################
 
@@ -53,15 +41,14 @@ ipudp_conf -cmd_arg <cmd_opt>
 Possible cmd_arg: ADD (-a) DEL (-d) LIST (-l)\n"
 Possible cmd_opt: args: dev, tun, rule, tsa
 
-With ipudp_conf it is possible to: add, remome and list the set of IPUDP virtual 
-interfaces, the tunnels and the rules registered in the module.
+With ipudp_conf it is possible to: add, remove and list the set of IPUDP virtual interfaces, the tunnels and the rules registered in the module.
 
 In details:
 
 (1) Add a virtual ipudp device:
 	ipudp_conf -a dev -N <name> -M <mode> -P <v4|v6>
 
-Possibile [non mandatory] options:
+Possible [non mandatory] options:
 -N <name>: 	set the name of the virtual device.
 			if -N is missing, the default name is ipudp#n where #n is the
 			first available index starting from 0
@@ -73,7 +60,7 @@ Possibile [non mandatory] options:
 			FIXED mode: a single ip/udp tunnel is bound to a given device.
 
 			MULTI_V4: more then one ip/udp tunnel can be bound to a device. 
-			The tunnel for a given packet is choosen from a set of rules that binds 
+			The tunnel for a given packet is chosen from a set of rules that binds 
 			the tunnel to a destination ipv4 address.. (only for IPv4 traffic)
 
 -P <v4|v6>: set the ip version of the outer header. Can be either v4 or v6.
@@ -103,7 +90,7 @@ Possibile [non mandatory] options:
 
 
 -U <dev>:	set the network device used to send IP/UDP encapsulated packets. When this
-			option is used, the IP source address of the tunnel is chosen acconringly
+			option is used, the IP source address of the tunnel is chosen accordingly
 			to the IP configuration of the underlying network device.
 
 -L <port>:	set the local UDP port for the tunnel.
@@ -111,7 +98,7 @@ Possibile [non mandatory] options:
 -R <port>:	set the remote UDP port for the tunnel.
 
 
-note: 	(1) when a tunnel is added a unique identifier is assocaited to the tunnel.
+note: 	(1) when a tunnel is added a unique identifier is associated to the tunnel.
 		Use this "tid" (option -I) to delete a tunnel (see later..)
 		(2) when a tunnel is added a TSA (tunnel server address) is automatically added. 
 		To prevent other application to bind on UDP ports used by IP/UDP tunnels, a 
@@ -138,7 +125,7 @@ note: when a tunnel is deleted, the related TSA is automatically deleted when no
 	-D <ipdst>: indicates to match the packets to be encapsulated if the IPv4 
 				destination address is equal to <ipdest>.
 
-	-I <tid>:	the tunnel id of the  tunnel tergeted by the rule.
+	-I <tid>:	the tunnel id of the  tunnel targeted by the rule.
 
 
 (6) List ipudp devices;
@@ -157,7 +144,7 @@ EXAMPLES
 
 
 ### TEST 1 
-# 1 IPv4/UDP and 1 IPv6/UDP tunnel betwen 2 hosts on the same LAN
+# 1 IPv4/UDP and 1 IPv6/UDP tunnel between 2 hosts on the same LAN
 # ipv4 tun from PC1 to PC2 the source port is 50000 and the remote is 60000
 # ipv6 tun from PC1 to PC2 the source port is 55000 and the remote is 65000
 
@@ -227,14 +214,14 @@ nc 192.168.100.1 10000
 # VPN: network 192.168.0.0/24
 # Since with this example we want to show how to multiplex 
 # different tunnels on a single IPUDP virtual device and how to
-# set the tunneling rules, for semplicity the spokes and the HUB 
+# set the tunnelling rules, for simplicity the spokes and the HUB 
 # are on the same LAN. Create a IP/UDP tunnel when one or both hosts 
 # are behind NAT is a well known problem that can be solved in many 
 # ways. For example we can think to use TINC to open the flow at the 
 # NATS and then configuring the IPUDP tunnels with ipudp_conf.
 # In this example the spokes will simply configure a direct tunnel
 # with the HUB, as in TEST 1. 
-# The HUB (with a multi_v4 dev) will decapasulate packets received on 
+# The HUB (with a multi_v4 dev) will decapsulate packets received on 
 # registered tunnels and forward them (if not addressed to itself)
 # through the proper tunnel, according to the set of forwarding rules
 # set with ipudp_conf. 
@@ -313,9 +300,9 @@ ipudp_conf -a rule -N ipudp0 -M multi_v4 -D 10.0.0.3 -I 2
 
 ###TEST
 # ipudp tunnel between a a host with private address and a server. 
-# The server is used like a multiprotol proxy and it forwards 
+# The server is used like a multiprotocol proxy and it forwards 
 # IP packets from PC1 to a given CH and viceversa performing decapsulation and 
-# encapsuation.
+# encapsulation.
 
 ###TEST
 # multi-homing and balance loading
