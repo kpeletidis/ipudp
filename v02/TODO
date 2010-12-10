@@ -1,0 +1,5 @@
+1) remove TSA. they are useless. for incoming packets look up in the tunnel list (also the remote parameters of the tunnel)
+2) implement server/client for NAT traversal
+3) remove socket reservation from kernel (sure?)
+4) implement keepalive in userspace
+
