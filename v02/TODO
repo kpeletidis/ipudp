@@ -1,5 +1,8 @@
-1) remove TSA. they are useless. for incoming packets look up in the tunnel list (also the remote parameters of the tunnel)
+1) 
+a - create a locl tun bucket where hash(local addr | local port) --> ipudp_dev_priv *
+b - create a remote tun bucket for multiple tun devices
+c - ipudp_4|6_rcv() first look up into the ltun bucket and retrieve the ipudp_dev receiving on this ltun
+then look up into the rtun bucket. I need this for NAT traversal since I need to let some tunneled packet get to userspace
 2) implement server/client for NAT traversal
 3) remove socket reservation from kernel (sure?)
 4) implement keepalive in userspace
-5) make the tunnel list a hashtable

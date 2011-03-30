@@ -91,10 +91,12 @@ ipudp_conf {
 	int default_af_out;
 };
 
+
 /* module common struct */
 typedef struct 
 _ipudp_data {
 	struct list_head * viface_list; //TODO not needed
+	//TODO ltun bucket (v6 and v4) hashtable  hash(local IP | local port) --> ipudp_dev_priv
 	int viface_count;
 	struct nf_hook_ops *nf_hook_ops_in;
 	struct nf_hook_ops *nf_hook_ops_6_in;
@@ -265,6 +267,8 @@ ipudp_dev_priv {
 	int rule_count;
 	int max_rule;
 	struct list_head list_tun; 	//tunnel list
+	//TODO remote tun bucket hash table
+	//remote tun hash table look up as virtual method
 	spinlock_t tun_lock;
 	int tun_count;
 	int max_tun;

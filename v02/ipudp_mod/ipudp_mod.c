@@ -196,6 +196,9 @@ ipudp_del_tun(ipudp_viface_params *p, ipudp_tun_params *q) {
 					list_del_rcu(&(item->list));
 					priv->tun_count --;
 										
+					//TODO if no other tunnel is pointing to the same tsa in the local tun bucket
+					//remove the ltun entry for this tunnel from the ltun bucket
+
 					//detach all rules pointing to this tunnel
 					//XXX not sure if it is better to automatically delete rules...
 					__detach_rules_to_tun(priv, item->tun.tid);
@@ -375,6 +378,9 @@ ipudp_4_rcv(unsigned int hooknum, struct sk_buff *skb, const struct net_device *
 		priv = netdev_priv(p->dev);
 		if (priv->params.af_out == IPV4) { 	
 
+			//TODO
+			//first check the ltun bucket  hash(laddr, lport) --> ipudp_dev_priv *
+			//second check the remote tunnel bucket
 			list_for_each_entry_rcu(tun_i, &(priv->list_tun), list){
 				if (	(tun_i->tun.srcport == udph->dest) &&
 						(tun_i->tun.destport == udph->source) &&
@@ -1072,6 +1078,9 @@ ipudp_bind_tunnel(ipudp_viface_params *p, ipudp_tun_params *tun) {
 	ipudp_list_tun_item *item;
 	struct ipudp_dev_priv *priv;
 
+	//TODO check if local param of the tunnel already present in the ltun bucket for a different interface
+	//if not add the tunnel
+	//TODO add this tun into the remote tunnel bucket
 
 	item = (ipudp_list_tun_item *)kmalloc(sizeof(*item), GFP_ATOMIC);
 	memcpy(&(item->tun), tun, sizeof(*tun));
