@@ -37,7 +37,6 @@
 #define IPUDP_DEF_AF_OUT IPV4
 
 #define IPUDP_CONF_MAX_TUN 100
-#define IPUDP_CONF_MAX_TSA 20
 
 #define MAX_IPUDP_DEV_NAME_LEN 12
 #define IPV6_ADDR_LEN 16
@@ -59,10 +58,6 @@ ipudp_ret_code{
 	IPUDP_ERR_TUN_MAX,
 	IPUDP_ERR_TUN_NOT_FOUND,
 	IPUDP_ERR_TUN_EXISTS,
-
-	IPUDP_ERR_TSA_SOCK_CREATE,	
-	IPUDP_ERR_TSA_SOCK_BIND,
-	IPUDP_ERR_TSA_MAX,
 	
 	IPUDP_ERR_RULE_BAD_PARAMS,
 	IPUDP_ERR_RULE_NOT_SUPPORTED,
@@ -100,8 +95,6 @@ ipudp_conf {
 typedef struct 
 _ipudp_data {
 	struct list_head * viface_list; //TODO not needed
-	//struct list_head tsa4_list;
-	//struct list_head tsa6_list;
 	int viface_count;
 	struct nf_hook_ops *nf_hook_ops_in;
 	struct nf_hook_ops *nf_hook_ops_6_in;
@@ -142,7 +135,6 @@ typedef enum
 _ipudp_nl_cmd_spec {
 	CMD_S_VIFACE = 1,
 	CMD_S_TUN,
-	CMD_S_TSA,
 	CMD_S_RULE,
 }ipudp_nl_cmd_spec;
 
@@ -154,7 +146,6 @@ IPUDP_GNL_ATTRIBUTES{
 	IPUDP_A_CMD_SPEC,
 	IPUDP_A_VIFACE_PARAMS,
 	IPUDP_A_TUN_PARAMS,
-	IPUDP_A_TSA_PARAMS,
 	IPUDP_A_RULE_PARAMS,	
 	IPUDP_A_LIST_PARAMS,
 	IPUDP_A_RET_CODE,
@@ -223,38 +214,6 @@ _ipudp_list_tun_item{
 }ipudp_list_tun_item;
 
 
-/*A Tunnel Server Address (TSA) is the (ip addr, pair)
-pair on wich a IPUDP tunneling aware host is listening 
-for encapsulated packets. Since there could be a scenario
-in which all (or many of) the n tunnels registered on a host 
-have the same local parameter, it could be usefull to 
-keep the list of TSA on a separate list to speed up the 
-decapsulation. 
-We keep a socket associated to each TSA because to reserve
-the listening port of the tunnel I chose to use 
-sock->ops->bind(). TODO Is there another way? */ 
-typedef struct
-_ipudp_tsa_params{
-	int af;
-	//struct net_device *viface;  //virtual iface to which the TSA is bound
-	int dev_idx;  //underlying iface
-	union {
-		__u32 v4addr;
-		__u8 v6addr[16];
-	} u;
-	__u16 port;
-	struct socket *sock;
-	unsigned long ino; //this can be considered the unique id for the tsa
-	int ref_cnt;
-}ipudp_tsa_params;
-
-typedef struct
-_ipudp_list_tsa_item{
-	struct list_head list;
-	ipudp_tsa_params tsa;
-}ipudp_list_tsa_item;
-
-
 typedef struct 
 _ipudp_dev {	
 	/* list pointer */
@@ -305,9 +264,6 @@ ipudp_dev_priv {
 	void * fw_rules; 			//forwarding rules
 	int rule_count;
 	int max_rule;
-	struct list_head list_tsa;	//TSA list	
-	int tsa_count;
-	int max_tsa;
 	struct list_head list_tun; 	//tunnel list
 	spinlock_t tun_lock;
 	int tun_count;
@@ -336,7 +292,6 @@ int ipudp_bind_tunnel(ipudp_viface_params *, ipudp_tun_params *);
 int ipudp_del_tun(ipudp_viface_params *, ipudp_tun_params *);
 ipudp_dev_priv * ipudp_get_priv(char *);
 
-int ipudp_del_tsa(ipudp_viface_params *, ipudp_tsa_params *);
 /* ipudp_genl.c*/
 int ipudp_genl_register(void);
 void ipudp_genl_unregister(void);

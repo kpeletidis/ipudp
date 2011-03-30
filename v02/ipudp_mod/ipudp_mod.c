@@ -16,11 +16,9 @@ static DEFINE_SPINLOCK(ipudp_lock);
 static ipudp_data *ipudp;
 static int __ipudp_init_priv_data(ipudp_dev_priv *);
 static void  ipudp_clean_priv(ipudp_dev_priv *);
-void ipudp_list_tsa_flush(ipudp_dev_priv *);
 void ipudp_list_rules_flush(ipudp_dev_priv *);
 void ipudp_list_tun_flush(ipudp_dev_priv *);
 
-ipudp_list_tsa_item *__tsa_already_in_list(ipudp_dev_priv *, ipudp_tun_params *);
 
 static const char banner[] __initconst =
 	KERN_INFO "Tunneling - IP over IP/UDP - module\n";
@@ -96,69 +94,15 @@ ipudp_list_tun_flush(ipudp_dev_priv *priv) {
 }
 
 void 
-ipudp_list_tsa_flush(ipudp_dev_priv *priv) {
-	ipudp_list_tsa_item *p,*q;
-	
-	list_for_each_entry_safe(p, q, &(priv->list_tsa), list) {
-		list_del(&(p->list));
-		sock_release(p->tsa.sock);
-        kfree(p);
-	}
-	priv->tsa_count = 0;
-	return;
-}
-
-void 
 ipudp_list_rules_flush(ipudp_dev_priv *priv) {
 	ipudp_rule_multi_v4 *p, *q;
 	
-	list_for_each_entry_safe(p, q, &(priv->list_tsa), list) {
+	list_for_each_entry_safe(p, q, ((struct list_head *)priv->fw_rules), list) {
 		list_del(&(p->list));
         kfree(p);
 	}
 
 	return;
-}
-
-//delete tsa by inode number for the associated socket
-int 
-ipudp_del_tsa(ipudp_viface_params *p, ipudp_tsa_params *q){
-	ipudp_dev *viface; 
-	ipudp_list_tsa_item *item;
-	struct ipudp_dev_priv *priv = NULL;
-
-	spin_lock_bh(&ipudp_lock);
-	list_for_each_entry(viface, ipudp->viface_list, list) {
-		if (!strcmp(p->name, viface->dev->name)) {
-			priv = netdev_priv(viface->dev);
-
-			list_for_each_entry(item, &(priv->list_tsa), list) {
-				if (q->ino == item->tsa.ino) {
-					list_del_rcu(&(item->list));
-					priv->tsa_count --;
-					spin_unlock_bh(&ipudp_lock);	
-					synchronize_rcu();
-					sock_release(item->tsa.sock);
-					kfree(item);
-					return IPUDP_OK;
-				}
-			}
-			spin_unlock_bh(&ipudp_lock);	
-			return IPUDP_ERR_TUN_NOT_FOUND;
-		}
-	}
-	
-	spin_unlock_bh(&ipudp_lock);
-	return IPUDP_ERR_DEV_NOT_FOUND;
-
-
-	return IPUDP_OK;
-}
-
-int 
-ipudp_add_tsa(ipudp_viface_params *viface, ipudp_tsa_params *tsa){
-	//XXX TODO XXX
-	return IPUDP_OK;
 }
 
 static void 
@@ -178,7 +122,6 @@ __list_dev_flush(void) {
 		kfree(p);
 	}
 }
-
 
 //XXX make general and call a callback to actually delete the rule TODO
 int
@@ -240,7 +183,6 @@ int
 ipudp_del_tun(ipudp_viface_params *p, ipudp_tun_params *q) {
 	ipudp_dev *viface; 
 	ipudp_list_tun_item *item;
-	ipudp_list_tsa_item *tsa_i;
 	struct ipudp_dev_priv *priv = NULL;
 
 	spin_lock_bh(&ipudp_lock);
@@ -253,22 +195,7 @@ ipudp_del_tun(ipudp_viface_params *p, ipudp_tun_params *q) {
 					//delete the tunnel
 					list_del_rcu(&(item->list));
 					priv->tun_count --;
-					
-					//delete the referenced tsa if no other
-					//tunnel is referencing it
-					tsa_i = __tsa_already_in_list(priv, &(item->tun));
-					if (tsa_i) {
-						if (tsa_i->tsa.ref_cnt == 1) {
-							list_del_rcu(&(tsa_i->list));
-							sock_release(tsa_i->tsa.sock);
-							priv->tsa_count --;
-						}
-						else  {
-							tsa_i->tsa.ref_cnt --;
-							tsa_i = NULL;
-						}
-					}
-					
+										
 					//detach all rules pointing to this tunnel
 					//XXX not sure if it is better to automatically delete rules...
 					__detach_rules_to_tun(priv, item->tun.tid);
@@ -277,9 +204,7 @@ ipudp_del_tun(ipudp_viface_params *p, ipudp_tun_params *q) {
 
 					synchronize_rcu();
 					kfree(item);
-					if (tsa_i) {
-						kfree(tsa_i);
-					}
+					
 					return IPUDP_OK;
 				}
 			}
@@ -344,15 +269,15 @@ ipudp_checksum6_ok(struct ipv6hdr *iph, struct udphdr *udph) {
 }
 
 unsigned int 
-ipudp_tsa6_rcv(unsigned int hooknum, struct sk_buff *skb, 
+ipudp_6_rcv(unsigned int hooknum, struct sk_buff *skb, 
 	const struct net_device *in, const struct net_device *out, 
 					int (*okfn)(struct sk_buff*)) {
 	struct ipv6hdr * iph;
 	struct udphdr * udph;
 	ipudp_dev *p;
 	ipudp_dev_priv *priv;
-	ipudp_list_tsa_item *tsa_i;
-	struct in6_addr *addr;
+	ipudp_list_tun_item *tun_i;
+	struct in6_addr *a, *b;
 
 	iph = ipv6_hdr(skb);
 
@@ -368,12 +293,15 @@ ipudp_tsa6_rcv(unsigned int hooknum, struct sk_buff *skb,
 	list_for_each_entry_rcu(p, ipudp->viface_list, list) {
 		priv = netdev_priv(p->dev);
 		if (priv->params.af_out == IPV6) {
-			list_for_each_entry_rcu(tsa_i, &(priv->list_tsa), list){
-				addr = (struct in6_addr *)tsa_i->tsa.u.v6addr;
+			list_for_each_entry_rcu(tun_i, &(priv->list_tun), list){	
+				a = (struct in6_addr *)tun_i->tun.u.v6p.src;
+				b = (struct in6_addr *)tun_i->tun.u.v6p.dest;
 
-				if (	( !memcmp(addr, &(iph->daddr), 16) || 
-					(tsa_i->tsa.dev_idx == in->ifindex) ) &&
-					(tsa_i->tsa.port == udph->dest)	) {
+				if (	( !memcmp(a, &(iph->daddr), 16) || 
+					(tun_i->tun.dev_idx == in->ifindex) ) &&
+					( !memcmp(b, &(iph->saddr), 16)) && 
+					(tun_i->tun.srcport == udph->dest) &&
+					(tun_i->tun.destport == udph->source) ) {
 
 					if (ipudp_checksum6_ok(iph, udph))
 						priv->tun_recv(skb, p->dev);
@@ -425,15 +353,17 @@ ipudp_checksum4_ok(struct iphdr *iph, struct udphdr *udph) {
 	return 1;
 }
 
+
+//XXX TSA
 unsigned int 
-ipudp_tsa4_rcv(unsigned int hooknum, struct sk_buff *skb, const struct net_device *in,
+ipudp_4_rcv(unsigned int hooknum, struct sk_buff *skb, const struct net_device *in,
 			  const struct net_device *out, int (*okfn)(struct sk_buff*)) {
 
 	struct iphdr * iph;
 	struct udphdr * udph;
 	ipudp_dev *p;
 	ipudp_dev_priv *priv;
-	ipudp_list_tsa_item *tsa_i;
+	ipudp_list_tun_item *tun_i;
 	
 	iph = (struct iphdr *)skb->data;	
 	if (iph->protocol != IPPROTO_UDP) return NF_ACCEPT;
@@ -443,11 +373,13 @@ ipudp_tsa4_rcv(unsigned int hooknum, struct sk_buff *skb, const struct net_devic
 	rcu_read_lock();
 	list_for_each_entry_rcu(p, ipudp->viface_list, list) {
 		priv = netdev_priv(p->dev);
-		if (priv->params.af_out == IPV4) {
-			list_for_each_entry_rcu(tsa_i, &(priv->list_tsa), list){
-				if (((tsa_i->tsa.u.v4addr == iph->daddr) || 
-					(tsa_i->tsa.dev_idx == in->ifindex)) &&
-					(tsa_i->tsa.port == udph->dest)) {
+		if (priv->params.af_out == IPV4) { 	
+
+			list_for_each_entry_rcu(tun_i, &(priv->list_tun), list){
+				if (	(tun_i->tun.srcport == udph->dest) &&
+						(tun_i->tun.destport == udph->source) &&
+						( (tun_i->tun.dev_idx == in->ifindex) || (tun_i->tun.u.v4p.src == iph->daddr) ) &&
+						(tun_i->tun.u.v4p.dest == iph->saddr) ) {
 
 					if (iph->frag_off & htons(IP_MF)) {
 						//fragmentation not supported	
@@ -555,7 +487,7 @@ static int
 ipudp_nf_init(struct nf_hook_ops *p) {
 	int err;
 
-	p->hook 	= ipudp_tsa4_rcv;
+	p->hook 	= ipudp_4_rcv;
 	p->pf	= PF_INET;
 	p->hooknum	= NF_INET_PRE_ROUTING;
 	p->priority	= NF_IP_PRI_FIRST;
@@ -570,7 +502,7 @@ static int
 ipudp_nf6_init(struct nf_hook_ops *p) {
 	int err;
 
-	p->hook 	= ipudp_tsa6_rcv;
+	p->hook 	= ipudp_6_rcv;
 	p->pf	= PF_INET6;
 	p->hooknum	= NF_INET_PRE_ROUTING;
 	p->priority	= NF_IP_PRI_FIRST;
@@ -591,7 +523,6 @@ new_dev_not_allowed(void) {
 static void 
 ipudp_clean_priv(ipudp_dev_priv * p) {
 	ipudp_list_tun_flush(p);
-	ipudp_list_tsa_flush(p);
 		
 	if (p->params.mode == MODE_MULTI_V4) {
 		ipudp_list_rules_flush(p);
@@ -959,7 +890,6 @@ __ipudp_init_priv_data(ipudp_dev_priv *p) {
 
 			//fixed mode: 1 tunnel (1 TSA)
 			p->max_tun = 1;
-			p->max_tsa = 1;
 			break;
 		case MODE_MULTI_V4: {
 			//this mode has a list of rules linearly inspected
@@ -982,7 +912,6 @@ __ipudp_init_priv_data(ipudp_dev_priv *p) {
 			p->fw_update = NULL;  //XXX to think about this...
 
 			p->max_tun = 256;
-			p->max_tsa = 256;
 			p->max_rule = IPUDP_CONF_MAX_RULE_MULTI_V4;
 		
 			break;
@@ -994,7 +923,6 @@ __ipudp_init_priv_data(ipudp_dev_priv *p) {
 	
 	
 	INIT_LIST_HEAD(&(p->list_tun));
-	INIT_LIST_HEAD(&(p->list_tsa));
 
 	return IPUDP_OK;
 
@@ -1051,152 +979,6 @@ __tun_dst_is_null(ipudp_tun_params *p) {
 		return -1;
 	
 	return __tun_addr_is_null(len, addr);
-}
-
-static int 
-__tsa_set_and_reserve_port(ipudp_tun_params *p, ipudp_tsa_params *tsa){
-	struct socket *sock;
-	int err = IPUDP_OK;
-	struct net_device * dev = NULL;
-	int addr_len;
-	void *addr_ptr = NULL;
-	struct inode *inode ;	
-	
-	if (p->dev_idx) {
-		tsa->dev_idx = p->dev_idx;
-		dev = dev_get_by_index(&init_net, p->dev_idx);
-		if(!dev) {
-			err = IPUDP_ERR_TUN_BAD_PARAMS;
-			goto err_return;
-		}	
-	}
-
-	switch(p->af) {
-		case IPV4: {
-			struct sockaddr_in addr;
-			addr_ptr = &addr;
-			addr_len = sizeof(addr);
-	
-			memset(&addr, 0, sizeof(struct sockaddr));
-			addr.sin_family = AF_INET;
-			addr.sin_addr.s_addr = p->u.v4p.src; //XXX if 0 --> add_any
-			addr.sin_port = p->srcport;
-		
-			if (sock_create_kern(addr.sin_family, SOCK_DGRAM, 
-						IPPROTO_UDP, &sock) < 0) {
-				err = IPUDP_ERR_TSA_SOCK_CREATE;
-				goto err_return;
-			}
-		
-			tsa->u.v4addr = p->u.v4p.src;
-			break;
-		}
-
-		case IPV6: {
-			struct sockaddr_in6 addr;	
-
-			addr_ptr = &addr;
-			addr_len = sizeof(addr);
-		
-			memset(&addr, 0, sizeof(struct sockaddr_in6));
-			addr.sin6_family = AF_INET6;
-
-			memcpy(&addr.sin6_addr, p->u.v6p.src, 
-					sizeof(struct in6_addr)); //XXX if all 0 --> addr_any
-			addr.sin6_port = p->srcport;
-		
-			if (sock_create_kern(addr.sin6_family, SOCK_DGRAM, 
-						IPPROTO_UDP, &sock) < 0) {
-				err = IPUDP_ERR_TSA_SOCK_CREATE;
-				goto err_return;
-			}
-
-			memcpy(tsa->u.v6addr, &addr.sin6_addr, 
-						sizeof(struct in6_addr));
-			break;
-		}
-		default:
-			err = IPUDP_ERR_TUN_BAD_PARAMS;
-			goto err_return;
-	}
-
-	if(sock->ops->bind(sock, (struct sockaddr *)addr_ptr, addr_len) < 0){
-		err = IPUDP_ERR_TSA_SOCK_BIND;
-		goto err_free_sock;
-	}
-
-	tsa->sock = sock;
-	tsa->af = p->af;
-	tsa->port = p->srcport; 
-
-	inode = SOCK_INODE(sock);
-	tsa->ino = inode->i_ino;
-
-	return IPUDP_OK;
-
-err_free_sock:	
-	kfree(sock);
-err_return:
-	return err;	
-}
-
- 
-ipudp_list_tsa_item *
-__tsa_already_in_list(ipudp_dev_priv *p, ipudp_tun_params *tun) {
-	ipudp_list_tsa_item *t;
-	
-	list_for_each_entry(t, &(p->list_tsa), list) {
-		if (t->tsa.af == IPV4) {
-			if (  (t->tsa.u.v4addr == tun->u.v4p.src) &&
-						(t->tsa.dev_idx == tun->dev_idx) &&
-								(t->tsa.port == tun->srcport) )	
-
-				return t;
-		}
-		else {
-			if (  !memcmp(t->tsa.u.v6addr,tun->u.v6p.src,16) &&
-							(t->tsa.dev_idx == tun->dev_idx) &&
-									(t->tsa.port == tun->srcport) )	
-				return t;
-		}
-	}
-	return NULL;
-}
-
-static int 
-__ipudp_create_and_add_tsa(ipudp_dev_priv *p, ipudp_tun_params *tun) {
-	int ret;
-	ipudp_tsa_params tsa;
-	ipudp_list_tsa_item *t;
-
-	memset(&tsa,0,sizeof(tsa));
-
-	if (p->tsa_count == p->max_tsa)	
-		return IPUDP_ERR_TSA_MAX;
-
-	//check if tsa already in the list
-	t = __tsa_already_in_list(p, tun);
-
-	if (t) {
-		t->tsa.ref_cnt++;
-		goto done;
-	}
-
-	if ((ret = __tsa_set_and_reserve_port(tun, &tsa)))
-		return ret;
-	
-	tsa.ref_cnt = 1;
-
-	t = (ipudp_list_tsa_item *)kmalloc(sizeof(*t), GFP_ATOMIC);
-	memcpy(&(t->tsa), &tsa, sizeof(tsa));
-
-
-	list_add_rcu(&(t->list), &(p->list_tsa));
-
-	p->tsa_count ++;
-
-done:
-	return IPUDP_OK;
 }
 
 static int 
@@ -1325,10 +1107,6 @@ ipudp_bind_tunnel(ipudp_viface_params *p, ipudp_tun_params *tun) {
 		ret = IPUDP_ERR_TUN_BAD_PARAMS;
 		goto err_ret;
 	}
-
-	/* reserve listening port and add tsa to list */
-	if ((ret = __ipudp_create_and_add_tsa(priv, tun))) 
-		goto err_ret;
 
 	/* add tunnel to list */
 	//list_add_rcu(&(item->list), &(priv->list_tun));
