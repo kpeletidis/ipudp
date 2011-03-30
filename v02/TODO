@@ -2,4 +2,4 @@
 2) implement server/client for NAT traversal
 3) remove socket reservation from kernel (sure?)
 4) implement keepalive in userspace
-
+5) make the tunnel list a hashtable
