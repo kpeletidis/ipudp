@@ -49,12 +49,10 @@ mainloop_data {
 	int exitloop;
 	
 	int signal_count;
-        struct mainloop_signal *signals;
-        int signaled;
-        int pending_terminate;
-
-        int terminate;
-
+	struct mainloop_signal *signals;
+	int signaled;
+	int pending_terminate;
+	int terminate;
 };
 
 

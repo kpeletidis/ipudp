@@ -37,29 +37,15 @@ load_dh_params(SSL_CTX *ctx,const char *file) {
 
 
 int 
-ssl_init(struct server_data *data) {
+ssl_init(struct server_data *server) {
+	SSL_CTX *ctx;	
 	char tmp_buf[1000];
+	int ret =0;
 	
 	SSL_load_error_strings();
 	SSL_library_init();
 	RAND_seed((void *) tmp_buf, 1000);
 	
-	
-	if (verbose) printf("ssl_init complete\n");
-
-	return 0;
-}
-
-
-int
-ssl_ctx_init(struct client_ctx *client, struct server_data *server) {
- 	SSL *ssl_connection;
-	SSL_CTX *ctx;
-	
-	SSL_library_init();
-	SSL_load_error_strings();
-	int ret = 0;
-
 	ctx = SSL_CTX_new(TLSv1_server_method());
 
 	if (!SSL_CTX_set_cipher_list(ctx, CIPHERLIST)) {
@@ -93,27 +79,62 @@ ssl_ctx_init(struct client_ctx *client, struct server_data *server) {
 	}	
 	if (verbose) printf("SSL context successfully initialized\n");
 
+	server->ssl_ctx = ctx;
+	
+	if (verbose) printf("ssl_init complete\n");
+
+	return 0;
+
+ret_free_ctx:
+	SSL_CTX_free(ctx);
+	return -1;
+}
+
+int
+ssl_connection_init(struct client *client, struct server_data *server) {
+	X509 *client_cert;
+	int err, ret = 0;
+	char *str;
+
 	client->bio_err = BIO_new_fp(stderr,BIO_NOCLOSE);
 		
-	client->ssl = SSL_new(ctx);
-
-	if (client->ssl)
-		SSL_set_fd(client->ssl, client->afd);
-	else {
+	if (!(client->ssl = SSL_new(server->ssl_ctx))) {
 		if (verbose) printf("SSL_new error\n");
 		ret = -1;
 		goto ret_free_ssl;
-	}
+	} 
+	else
+		SSL_set_fd(client->ssl, client->cfd);
 
-	/* XXX register SSL socket handler into the mainloop */ 
+	if ((err = SSL_accept(client->ssl)) <= 0) {
+		if (verbose) printf("SSL_accept error\n");
+		ret = -1;
+		goto ret_free_ssl;	
+	}
+  
+	client_cert = SSL_get_peer_certificate(client->ssl);
+	 
+	if (client_cert != NULL) {
+		if (verbose) printf("client certificate:\n");
+		
+		str = X509_NAME_oneline(X509_get_subject_name(client_cert), 0, 0);
+		if (str) {
+			if (verbose) printf("\t subject: %s\n", str);
+			OPENSSL_free (str);
+		}
+		str = X509_NAME_oneline(X509_get_issuer_name(client_cert), 0, 0);
+		if (str) {
+			if (verbose) printf("\t issuer: %s\n", str);
+			OPENSSL_free (str);
+		}
+		client->cert = client_cert;	
+	}
 
 	return ret;
 
 ret_free_ssl:
 	SSL_free(client->ssl);
 	BIO_free(client->bio_err);
-ret_free_ctx:
-	SSL_CTX_free(client->ssl_ctx);
 
 	return ret;
 }
@@ -224,18 +245,21 @@ ssl_check_error(SSL * ssl, int ret) {
 }
 
 void 
-ssl_client_fini(struct client_ctx *client) {
+ssl_client_fini(struct client *client) {
 	
-	/*
-	SSL_close();
-	SSL_CTX_free();
-	SSL_free();	
-	BIO_free();
-	free(client);
-	*/
+	if (client->ssl){
+		X509_free(client->cert);
+		SSL_shutdown(client->ssl);
+		SSL_free(client->ssl);
+    }
+	
+	if (client->bio_err) {
+		BIO_free(client->bio_err);
+	}
 	return; 
 }
 
 void ssl_fini(struct server_data *data) {
+	SSL_CTX_free(data->ssl_ctx);
 	return;
 }

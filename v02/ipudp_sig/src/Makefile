@@ -2,14 +2,14 @@ SERVERPROG = server
 CLIENTPROG = client
 
 CLIENTOBJS = mainloop.o ssl.o client.o
-SERVEROBJS = server_main.o mainloop.o ssl.o server.o sock.o 
+SERVEROBJS = server_main.o mainloop.o ssl.o server.o proto.o 
 
 SERVERHEADER = ipudp_server.h list.h mainloop.h
 CFLAGS += -Wall
 
 INCFLAGS =
 CLIENTLIBS = -lssl
-SERVERLIBS = -lssl -lpthread 
+SERVERLIBS = -lssl 
 
 all: server
 

@@ -3,7 +3,7 @@
 int verbose = 0; //XXX TODO use a better logging  function with server_data.verbose_level
 
 void usage(void) { 
-	printf("Usage: ipudp_client -a <local addr> -p <local port> -v <verbose level>\n"
+	printf("Usage: ipudp_server -a <local addr> -p <local port> [-u <tun_port>] [-v <verbose level>]\n"
 	"\n");
 	exit(-1);
 }
@@ -51,20 +51,23 @@ main(int argc, char **argv)
 {
 	struct server_data s_data;
 	int c;
-	int localport = 0;
+	int localport = 0, udpport = 0;
 	char *localaddr = NULL;
 
 	memset(&s_data, 0, sizeof(struct server_data));
 
 	s_data.verbose_level = 0;
 	
-	while((c = getopt(argc, argv, "a:p:v"))!= -1) {
+	while((c = getopt(argc, argv, "a:p:u:v"))!= -1) {
 		switch (c) {
 		case 'a':
 			localaddr = optarg;
 			break;
 		case 'p':
 			localport = atoi(optarg);
+			break;
+		case 'u':
+			udpport = atoi(optarg);
 			break;
 		case 'v':
 			s_data.verbose_level = atoi(optarg);
@@ -84,6 +87,13 @@ main(int argc, char **argv)
 		if (verbose) printf("bad or unspecified local port\n");
 		usage();
 	}
+	else
+		s_data.local_port = htons(localport);
+
+	if (udpport == 0)
+		udpport = DEFAULT_UDP_PORT;
+
+	s_data.tun_port = htons(udpport);
 
 	/*initalizations*/
 	signal(SIGTERM, signal_handler);
