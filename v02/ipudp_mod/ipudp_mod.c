@@ -33,6 +33,31 @@ struct list_head __inline * ipudp_get_viface_list(void) {
 	return ipudp->viface_list;
 }
 
+struct pcpu_tstats {
+	unsigned long rx_packets;
+	unsigned long rx_bytes;
+	unsigned long tx_packets;
+	unsigned long tx_bytes;
+};
+
+static struct net_device_stats *ipudp_get_stats(struct net_device *dev)
+{
+	struct pcpu_tstats sum = { 0 };
+	int i;
+	for_each_possible_cpu(i) {
+		const struct pcpu_tstats *tstats = per_cpu_ptr(dev->tstats, i);
+		sum.rx_packets += tstats->rx_packets;
+		sum.rx_bytes   += tstats->rx_bytes;
+		sum.tx_packets += tstats->tx_packets;
+		sum.tx_bytes   += tstats->tx_bytes;
+	}
+	dev->stats.rx_packets = sum.rx_packets;
+	dev->stats.rx_bytes   = sum.rx_bytes;
+	dev->stats.tx_packets = sum.tx_packets;
+	dev->stats.tx_bytes   = sum.tx_bytes;
+	return &dev->stats;
+}
+
 int __inline ipudp_get_viface_count(void) {
 	return ipudp->viface_count;
 }
@@ -109,6 +134,7 @@ static void
 ipudp_tunnel_uninit(struct net_device *dev) {		
 	ipudp_dev_priv *priv = netdev_priv(dev);
 	
+	kfree(dev->tstats);	
 	ipudp_clean_priv(priv);
 }
 
@@ -243,7 +269,7 @@ found:
 	spin_unlock_bh(&ipudp_lock);	
 	synchronize_rcu();
 	kfree(viface);
-	
+
 	unregister_netdev(dev);
 
 	return IPUDP_OK;
@@ -453,6 +479,7 @@ net_device_ops ipudp_netdev_ops = {
 	.ndo_uninit     = ipudp_tunnel_uninit,
 	.ndo_start_xmit = ipudp_tunnel_xmit,
 	.ndo_change_mtu = ipudp_tunnel_change_mtu,
+	.ndo_get_stats = ipudp_get_stats,
 };
 
 static void 
@@ -582,7 +609,9 @@ ipudp_tun4_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 	struct udphdr *udph;
 	struct sk_buff *new_skb; 
 	struct rtable *rt;
-	struct netdev_queue *txq = netdev_get_tx_queue(dev, 0);
+	//struct netdev_queue *txq = netdev_get_tx_queue(dev, 0);
+	struct pcpu_tstats *tstats = this_cpu_ptr(dev->tstats);
+
 	struct net_device_stats *stats = &dev->stats;
 	int err;
 	
@@ -612,7 +641,6 @@ ipudp_tun4_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 				}
 			},
 			.proto	= IPPROTO_UDP 
-			//.proto 	= IPPROTO_IP
 		};
 
 		if (ip_route_output_key(dev_net(dev), &rt, &fl)) {
@@ -620,14 +648,14 @@ ipudp_tun4_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 			goto tx_error;
 		}
 	}
-
-	if (rt->u.dst.dev == dev) {
+	
+	if (rt->dst.dev == dev) {
 		stats->collisions++;
 		ip_rt_put(rt);
 		goto tx_error;
 	}
 
-	if (skb_headroom(skb) < LL_RESERVED_SPACE(rt->u.dst.dev) + IPUDP4_HDR_LEN 
+	if (skb_headroom(skb) < LL_RESERVED_SPACE(rt->dst.dev) + IPUDP4_HDR_LEN 
 			|| skb_shared(skb) || (skb_cloned(skb) && !skb_clone_writable(skb, 0))) {
 		new_skb = skb_realloc_headroom(skb, IPUDP4_HDR_LEN);
 		if (!new_skb) {
@@ -651,7 +679,7 @@ ipudp_tun4_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 	//XXX check
 	IPCB(skb)->flags &= ~(IPSKB_XFRM_TUNNEL_SIZE | IPSKB_XFRM_TRANSFORMED | IPSKB_REROUTED);
 	skb_dst_drop(skb);
-	skb_dst_set(skb, &rt->u.dst);
+	skb_dst_set(skb, &rt->dst);
 
 	//push ipudp tunnel header
 	{
@@ -673,7 +701,7 @@ ipudp_tun4_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 		udph->len 		= htons(in_len + 8);
 		udph->check		= 0;
 
-		ip_select_ident(ip_hdr(skb), &rt->u.dst, NULL);
+		ip_select_ident(ip_hdr(skb), &rt->dst, NULL);
 		skb->ip_summed = CHECKSUM_NONE; //it will be computed by ip layer
 		udph->check = __udp_cheksum(iph, udph);
 	}
@@ -684,8 +712,8 @@ ipudp_tun4_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 	err = ip_local_out(skb);
 
 	if (likely(net_xmit_eval(err) == 0)) {
-		txq->tx_bytes += skb->len;
-		txq->tx_packets++;
+		tstats->tx_bytes += skb->len;
+		tstats->tx_packets++;
 	} else {
 		stats->tx_errors++;
 		stats->tx_aborted_errors++;
@@ -706,12 +734,13 @@ ipudp_tun6_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 	struct ipv6hdr *iph;
 	struct udphdr *udph;
 	struct sk_buff *new_skb; 
-	struct netdev_queue *txq = netdev_get_tx_queue(dev, 0);
 	struct net_device_stats *stats = &dev->stats;
+	struct pcpu_tstats *tstats = this_cpu_ptr(dev->tstats);
 	int err;
 	struct dst_entry *dst;
 	struct rt6_info *rt;
 	struct flowi fl;
+	struct inet6_ifaddr *ifp;
 
 	if (skb->protocol == htons(ETH_P_IP)) 
 		in_len = ntohs( ((struct iphdr *)iph_in)->tot_len );
@@ -728,14 +757,23 @@ ipudp_tun6_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 	}
 
 	{	
+		struct list_head *p;
 		__u8 addr6_any[16] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+
 		memset(&fl, 0, sizeof(fl));
 		if (!(memcmp(tun->u.v6p.src, &addr6_any, 16)))  {
 			if (!(rt = rt6_lookup(dev_net(dev), (struct in6_addr *)tun->u.v6p.dest,  (struct in6_addr *)tun->u.v6p.src, tun->dev_idx, 0))) {
 				stats->tx_carrier_errors++;
 				goto tx_error;
 			}
-			memcpy(&fl.fl6_src,&rt->rt6i_idev->addr_list->addr, 16);
+			p = &rt->rt6i_idev->addr_list;
+			if (!list_empty(p)){
+				list_for_each_entry(ifp, p, if_list) {
+					memcpy(&fl.fl6_src, &ifp->addr, 16);
+				}
+			}
+			else 
+				goto tx_error;
 			//XXX guess I can get this address also from dst->dev 
 			//without another route lookup
 		}
@@ -810,8 +848,8 @@ ipudp_tun6_xmit(struct sk_buff *skb, ipudp_tun_params *tun, struct net_device *d
 	err = ip6_local_out(skb);
 
 	if (likely(net_xmit_eval(err) == 0)) {
-		txq->tx_bytes += skb->len;
-		txq->tx_packets++;
+		tstats->tx_bytes += skb->len;
+		tstats->tx_packets++;
 	} else {
 		stats->tx_errors++;
 		stats->tx_aborted_errors++;
@@ -1252,6 +1290,12 @@ ipudp_add_viface(ipudp_viface_params * p) {
 	if ((err = __set_viface_mtu(dev)))
 		goto err_init_priv;	
 
+	//alloc tstat struct
+	dev->tstats = alloc_percpu(struct pcpu_tstats);
+	if (!dev->tstats) {
+		err = IPUDP_ERR_DEV_ALLOC;
+		goto err_reg_dev;
+	}
 	//register net device
 	if (register_netdev(dev)) {
 		err = IPUDP_ERR_DEV_REG;
