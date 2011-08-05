@@ -5,7 +5,7 @@ CLIENTOBJS = mainloop.o ssl.o client.o
 SERVEROBJS = server_main.o mainloop.o ssl.o server.o proto.o 
 
 SERVERHEADER = ipudp_server.h list.h mainloop.h
-CFLAGS += -Wall
+CFLAGS += -Wall -ggdb -DDBG
 
 INCFLAGS =
 CLIENTLIBS = -lssl

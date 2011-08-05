@@ -35,6 +35,11 @@ load_dh_params(SSL_CTX *ctx,const char *file) {
 	return 1;
 }
 
+int verify_callback(int preverify_ok, X509_STORE_CTX *x509_ctx) {
+	printf("XXX inside verify callback XXX\n");
+	
+	return 1;
+}
 
 int 
 ssl_init(struct server_data *server) {
@@ -59,6 +64,7 @@ ssl_init(struct server_data *server) {
 		ret = -1;
 		goto ret_free_ctx;
 	}
+
 	if(!(SSL_CTX_use_PrivateKey_file(ctx, KEYFILE,
 					SSL_FILETYPE_PEM))) {
 		if (verbose) printf("SSL_CTX_use_privatekey error\n");
@@ -78,6 +84,8 @@ ssl_init(struct server_data *server) {
 		goto ret_free_ctx;
 	}	
 	if (verbose) printf("SSL context successfully initialized\n");
+   
+    //SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER|SSL_VERIFY_FAIL_IF_NO_PEER_CERT|SSL_VERIFY_CLIENT_ONCE, verify_callback);
 
 	server->ssl_ctx = ctx;
 	
@@ -129,6 +137,7 @@ ssl_connection_init(struct client *client, struct server_data *server) {
 		}
 		client->cert = client_cert;	
 	}
+	else client->cert = NULL;
 
 	return ret;
 
@@ -177,13 +186,14 @@ again:
 	}
 
 	*ptr = 0;	/* null terminate like fgets() */
+	*outlen= n - 1;
 
 	return(rc);
 }
 
 
 
-void 
+int 
 ssl_write_n(SSL * ssl, unsigned char *buf, int len) {
 			
 	int r;
@@ -193,10 +203,12 @@ ssl_write_n(SSL * ssl, unsigned char *buf, int len) {
 	}
 
 	if (verbose) printf("ssl_write: %d bytes sent\n", r);
+	
+	return r;
 }
 
 int 
-ssl_read_n(SSL *ssl, unsigned char *buf, long len) {
+ssl_read_n(SSL *ssl, unsigned char *buf, int len) {
 	int ret; 
 	unsigned char tmp[1000];
 	int done = 0;
@@ -233,7 +245,6 @@ ssl_check_error(SSL * ssl, int ret) {
 	case SSL_ERROR_ZERO_RETURN:	
 		if (verbose) printf("SSL session shutdown\n");
 		return -1;
-
 	case SSL_ERROR_SYSCALL:
 		if (verbose) printf("SSL Error: Premature close\n");
 		return -1;
@@ -248,7 +259,7 @@ void
 ssl_client_fini(struct client *client) {
 	
 	if (client->ssl){
-		X509_free(client->cert);
+		if (client->cert) X509_free(client->cert);
 		SSL_shutdown(client->ssl);
 		SSL_free(client->ssl);
     }

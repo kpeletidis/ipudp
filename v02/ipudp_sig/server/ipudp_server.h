@@ -22,11 +22,32 @@
 #include "mainloop.h"
 #include "list.h"
 
-#define CIPHERLIST "TLS_RSA_WITH_AES_128_CBC_SHA:TLS_RSA_WITH_AES_256_CBC_SHA"
+#define CIPHERLIST "ALL"//"TLS_RSA_WITH_AES_128_CBC_SHA:TLS_RSA_WITH_AES_256_CBC_SHA:"
 #define DEFAULT_UDP_PORT 50000
 #define MAX_LINE_LEN 256
 
+#define DEFAULT_FIRST_ADDR 0x0A640001 	//10.100.0.1
+#define DEFAULT_LAST_ADDR 0x0A6400FE 	//10.100.0.254
+
 extern int verbose;
+
+struct vaddr {
+	struct list_head list;
+	__u32 addr;					//overlay addr
+	struct client *client;		//client to which the addr is assigned
+};
+
+struct tunnel {	
+	int tid;					//unique tunnel id
+	struct sockaddr_in addr; 	//client address:port of a UDP tunnel
+	int STATE;
+};
+
+struct pending_tun_req {
+	struct list_head list;
+	int token;
+	struct client *client;
+};
 
 struct 
 server_data {
@@ -38,17 +59,22 @@ server_data {
 	int verbose_level;
 	struct list_head clients;	//list of active clients
 	SSL_CTX *ssl_ctx;			//SSL context
+	struct list_head v_addrs;
+								//list of allocated client overlay addresses
+	__u32 first_addr;			//first address - server overlay address
+	__u32 last_addr;
 };
 
 struct
 client {
 	struct list_head list;
-	struct sockaddr_in addr; 	//client address:port
+	struct sockaddr_in addr; 	//client address:port of TCP connection
 	SSL *ssl;					//SSL session
 	int cfd;					//connection socket
 	BIO *bio_err;				//openssl BIO error
 	struct list_head tunnels;	//list of registered tunnel
 	X509 *cert;					//X509 client certificate
+	__u32 v_addr;				//assigned overlay address
 };
 
 /* server.c */
@@ -61,6 +87,7 @@ void ssl_fini(struct server_data *);
 void ssl_client_fini(struct client *);
 int ssl_connection_init(struct client *, struct server_data *);
 int ssl_readline(SSL *, void *, int, int *);
+int ssl_write_n(SSL *, unsigned char *, int);
 
 /* sock.c */
 int sock_init(struct server_data *);

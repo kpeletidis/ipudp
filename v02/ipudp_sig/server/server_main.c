@@ -3,7 +3,7 @@
 int verbose = 0; //XXX TODO use a better logging  function with server_data.verbose_level
 
 void usage(void) { 
-	printf("Usage: ipudp_server -a <local addr> -p <local port> [-u <tun_port>] [-v <verbose level>]\n"
+	printf("Usage: ipudp_server -p <local port> [-a <local addr>] [-u <tun_port>] [-v <verbose level>]\n"
 	"\n");
 	exit(-1);
 }
@@ -27,7 +27,6 @@ static int __init(struct server_data *data) {
 		return -1;
 	if (verbose) printf("server SLL CTX succesfully initialized\n");
 
-
 	/*if (ctrl_iface_init() < 0 )
 		return -1;	
 	if (verbose) printf("ctrl_iface succesfully initialized\n");*/
@@ -37,11 +36,10 @@ static int __init(struct server_data *data) {
 }
 
 static void __fini(struct server_data *data) {
-	ssl_fini(data);
-	server_shutdown(data);
-	
+	//ssl_fini(data);
+	if (verbose) printf("closing ipudp_server\n");
+	server_shutdown(data);	
 	mainloop_destroy();
-	return;
 }
 
 
@@ -70,7 +68,7 @@ main(int argc, char **argv)
 			udpport = atoi(optarg);
 			break;
 		case 'v':
-			s_data.verbose_level = atoi(optarg);
+			//s_data.verbose_level = atoi(optarg);
 			verbose = 1;
 			break;
 		
@@ -79,12 +77,15 @@ main(int argc, char **argv)
 		}
 	}
 
-	if ((s_data.local_addr = inet_pton(AF_INET, localaddr, &s_data.local_addr) < 0)){
-		if (verbose) printf("bad local address\n");
-		usage();
+	if (localaddr) {
+		if ((s_data.local_addr = inet_pton(AF_INET, localaddr, &s_data.local_addr) < 0)){
+			printf("bad local address\n");
+			usage();
+		}
 	}
-	if ((localport = 0)) {
-		if (verbose) printf("bad or unspecified local port\n");
+
+	if ((localport == 0)) {
+		printf("bad or unspecified local port\n");
 		usage();
 	}
 	else
@@ -100,9 +101,9 @@ main(int argc, char **argv)
 	signal(SIGINT, signal_handler);	
 	signal(SIGKILL, signal_handler);
 
-	if (__init(&s_data) < 1)
+	if (__init(&s_data) < 0)
 		goto exit;
-	
+
 	mainloop_run();
 
 exit:
