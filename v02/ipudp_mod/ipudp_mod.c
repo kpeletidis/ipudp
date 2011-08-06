@@ -134,8 +134,12 @@ static void
 ipudp_tunnel_uninit(struct net_device *dev) {		
 	ipudp_dev_priv *priv = netdev_priv(dev);
 	
-	kfree(dev->tstats);	
 	ipudp_clean_priv(priv);
+}
+
+static void  ipudp_dev_free(struct net_device *dev) {
+	free_percpu(dev->tstats);
+	free_netdev(dev);
 }
 
 static void 
@@ -486,7 +490,7 @@ static void
 ipudp_tunnel_setup(struct net_device *dev)
 {
 	dev->netdev_ops         = &ipudp_netdev_ops;
-	dev->destructor         = free_netdev;
+	dev->destructor         = ipudp_dev_free;
 	dev->type               = ARPHRD_TUNNEL; //XXX XXX XXX
 	dev->flags              = IFF_NOARP/*|IFF_POINTOPOINT*/;
 	dev->iflink             = 0;
