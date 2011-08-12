@@ -1164,8 +1164,8 @@ ipudp_bind_tunnel(ipudp_viface_params *p, ipudp_tun_params *tun) {
 	if ((ret = __list_tun_insert((ipudp_list_tun_item *)&(item->list), &(priv->list_tun))))
 		goto err_ret;
 
+	tun->tid = item->tun.tid;
 	priv->tun_count++;
-
 	spin_unlock_bh(&ipudp_lock);
 
 	return IPUDP_OK;

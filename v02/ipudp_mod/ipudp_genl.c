@@ -164,6 +164,10 @@ ipudp_genl_do_add(struct sk_buff *skb, struct genl_info *info){
 				goto done;
 			}
 			ret_code = ipudp_bind_tunnel(viface, tun);
+
+//XXX
+			set_msg_attr(&attr[n_attr], IPUDP_A_TUN_PARAMS, tun, 
+						sizeof(*tun), 0, &n_attr);
 			break;
 		}	
 		case CMD_S_RULE:

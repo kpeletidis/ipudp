@@ -199,8 +199,8 @@ _ipudp_tun_params {
 			__u8 dest[16];
 		}v6p;
 		struct {
-			__u32 src;
-			__u32 dest;
+			__u32 src;	//network byte order
+			__u32 dest; //network byte order
 		}v4p;
 	} u;
 	__u16 srcport;  	//udp src port - network byte order 
