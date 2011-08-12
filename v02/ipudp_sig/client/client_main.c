@@ -53,7 +53,7 @@ int main(int argc, char **argv) {
 	int c = 0;
 	int console = 0;
 	int port = 0, uport = 0;
-	char *addrstr;
+	char *addrstr = NULL;
 	verbose = 0;
 
 	while((c = getopt(argc, argv, "u:p:a:cv"))!= -1) {

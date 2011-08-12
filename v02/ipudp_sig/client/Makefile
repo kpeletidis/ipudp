@@ -5,7 +5,7 @@ OBJS = mainloop.o ssl.o client.o console.o client_main.o utils.o proto.o ipudp_c
 HEADERS = ipudp_client.h list.h mainloop.h
 CFLAGS += -Wall  -I../ipudp_conf/ -I../lib -I../../ipudp_mod/ -DDBG -DUSERSPACE
 
-DEPLIB = -L../libs/ -lappconsole -Wl,-rpath,../libs/ 
+DEPLIB = -L.libs/ -lappconsole -Wl,-rpath,.libs/ -lappconsole
 LIBS = $(DEPLIB) -lssl  -L../lib/ -lipudp_conf
 
 all: client

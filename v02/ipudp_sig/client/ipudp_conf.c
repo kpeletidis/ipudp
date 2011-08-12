@@ -35,21 +35,12 @@ ipudp_conf_init(void) {
 
 int 
 ipudp_conf_fini(void) {
-	char cmd[128] = { 0 };
-
 	if (strlen(c_data.viface) == 0)
 		return 0;
-
-	print_log("Removing viface...");
-    sprintf(cmd, "%s -d dev -N %s", IPUDP_CONF_PATH, c_data.viface);
-    if (system(cmd) == 0) {
-        if (verbose) printf("done!\n");
-    }
-    else {
-        if (verbose) printf("error!\n");
-        return -1;
-    }
 	
+	if (ipudp_conf_cmd(IPUDP_CONF_DEL_VIFACE, NULL) < 0)
+		print_log("warning: couldn't remove viface\n");
+
 	return 0;
 }
 
@@ -77,24 +68,36 @@ ipudp_conf_cmd(int cmd, void *args) {
 		}
 
 		case IPUDP_CONF_ADD_VIFACE: {
-			char *viface = (char *)args;	
-	
-			print_log("Adding viface...");
+			char *viface = (char *)args;		
+			ipudp_viface_params prms;	
 
-			sprintf(cmd_str, "%s -a dev -N %s", IPUDP_CONF_PATH, viface);
-
-			if (system(cmd_str) == 0) {
-				print_log("done!\n");
+			memset(&prms, 0, sizeof(ipudp_viface_params));
+			if (verbose) printf("adding %s interface...", viface);
+			memcpy(prms.name, viface, MAX_IPUDP_DEV_NAME_LEN);
+			if (do_cmd_add_viface(&prms) == 0) {
+				if (verbose) printf("done!\n");
 				strcat(c_data.viface, viface);
 			}
 			else {
-				print_log("error!\n");
+				if (verbose) printf("error!\n");
+				memset(c_data.viface, 0, VIFACE_STR_LEN);
 				ret = -1;
 			}
-
 			break;
 		}
 		case IPUDP_CONF_DEL_VIFACE: {
+			ipudp_viface_params prms;	
+
+			memset(&prms, 0, sizeof(ipudp_viface_params));
+			if (verbose) printf("removing %s interface...", c_data.viface);
+			memcpy(prms.name, c_data.viface, MAX_IPUDP_DEV_NAME_LEN);
+			if (do_cmd_del_viface(&prms) == 0) {
+				if (verbose) printf("done!\n");
+			}
+			else {
+				if (verbose) printf("error!\n");
+				ret = -1;
+			}
 			break;
 		}
 		case IPUDP_CONF_ADD_TUN: {
