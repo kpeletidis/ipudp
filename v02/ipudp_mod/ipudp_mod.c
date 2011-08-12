@@ -386,6 +386,16 @@ ipudp_checksum4_ok(struct iphdr *iph, struct udphdr *udph) {
 	return 1;
 }
 
+static int 
+__is_keepalive(struct sk_buff *skb) {
+	__u32 escape = 0;
+	__u8 *p = skb->data + 28;
+
+	if (!memcmp(p, &escape, 4)) {
+		return 1;
+	}
+	return 0;
+}
 
 //XXX TSA
 unsigned int 
@@ -423,8 +433,13 @@ ipudp_4_rcv(unsigned int hooknum, struct sk_buff *skb, const struct net_device *
 						goto done;
 					}
 
-					if (ipudp_checksum4_ok(iph, udph))
-						priv->tun_recv(skb, p->dev);
+					if (ipudp_checksum4_ok(iph, udph)) {
+						if (__is_keepalive(skb)) {
+							goto accept;
+						}
+						else 
+							priv->tun_recv(skb, p->dev);
+					}
 					else
 						p->dev->stats.tx_dropped++;
 
@@ -433,6 +448,7 @@ ipudp_4_rcv(unsigned int hooknum, struct sk_buff *skb, const struct net_device *
 			}
 		}
 	}
+accept:
 	rcu_read_unlock();
 
 	return NF_ACCEPT;
@@ -866,6 +882,7 @@ tx_error:
 	dev_kfree_skb(skb);
 }
 
+
 static void
 __ipudp_tun_recv(struct sk_buff *skb, struct net_device *dev, int pull_len) {
 	struct iphdr *ip;
@@ -878,6 +895,8 @@ __ipudp_tun_recv(struct sk_buff *skb, struct net_device *dev, int pull_len) {
 	//skb_reset_network_header(new_skb);
 
 	ip = (struct iphdr *)new_skb->data;
+
+
 	if (ip->version == 4)
 		new_skb->protocol = htons(ETH_P_IP);
 
