@@ -1,9 +1,12 @@
 RM = rm
 CC = gcc
+AR = ar rcs
 
 IPDUP_KERNEL_DIR = ../ipudp_mod/
 PROG = ipudp_conf
+LIB = libipudp_conf.a
 OBJS = ipudp_genl.o ipudp_conf.o ipudp_util.o
+LIBOBJS = ipudp_genl.o ipudp_util.o
  
 CFLAGS += -Wall -ggdb -DDEBUG -DUSERSPACE
 LIBS += 
@@ -15,9 +18,10 @@ all: $(OBJS)
 %.o: %.c
 	$(CC) -c $(CFLAGS) $(INCFLAGS) -o $@ $<
 
+lib: $(LIBOBJS)
+	$(AR) $(LIB) $(LIBOBJS)
 
-#.SILENT: clean
-.PHONY: clean
+.SILENT: clean
 
 clean:	
-	$(RM) $(PROG) $(OBJS)
+	$(RM) $(PROG) $(OBJS) $(LIB)

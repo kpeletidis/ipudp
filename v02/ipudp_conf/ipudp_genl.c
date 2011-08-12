@@ -728,6 +728,7 @@ do_cmd_add_tun(ipudp_viface_params *v, ipudp_tun_params *p){
 	//struct sockaddr_nl nladdr;
 	int ret;
 	ipudp_nl_cmd_spec cmd_spec = CMD_S_TUN;
+	ipudp_tun_params *t;
 	
 	/* fill the header */
 	req.n.nlmsg_len 	= NLMSG_LENGTH(GENL_HDRLEN);
@@ -769,8 +770,10 @@ do_cmd_add_tun(ipudp_viface_params *v, ipudp_tun_params *p){
 	if ((ret = *(int *)get_nl_data(IPUDP_A_RET_CODE)))
 		__print_ipudp_error(ret);
 	else {
-		v = (ipudp_viface_params *) get_nl_data(IPUDP_A_TUN_PARAMS);
-		printf("tunnel successfully added\n");
+		//v = (ipudp_viface_params *) get_nl_data(IPUDP_A_TUN_PARAMS);
+		t = (ipudp_tun_params *) get_nl_data(IPUDP_A_TUN_PARAMS);
+		printf("tunnel %d successfully added\n", t->tid);
+		p->tid = t->tid;
 	}
 
 	return ret;
