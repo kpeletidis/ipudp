@@ -1,20 +1,14 @@
 SERVERPROG = server
-CLIENTPROG = client
 
-CLIENTOBJS = mainloop.o ssl.o client.o
-SERVEROBJS = server_main.o mainloop.o ssl.o server.o proto.o 
+SERVEROBJS = server_main.o mainloop.o ssl.o server.o proto.o ipudp_conf.o tunnel.o 
 
 SERVERHEADER = ipudp_server.h list.h mainloop.h
-CFLAGS += -Wall -ggdb -DDBG
+CFLAGS += -Wall -ggdb -DDBG -DUSERSPACE -I../../ipudp_mod/  -I../lib
 
 INCFLAGS =
-CLIENTLIBS = -lssl
-SERVERLIBS = -lssl 
+SERVERLIBS = -lssl  -L../lib/ -lipudp_conf
 
 all: server
-
-#client: $(CLIENTOBJS)
-#	gcc $(CFLAGS) -DCLIENT $(CLIENTOBJS) $(CLIENTLIBS) -o $(CLIENTPROG)
 
 server: $(SERVEROBJS) $(SERVERHEADER)
 	gcc $(CFLAGS) -DSERVER $(SERVEROBJS) $(SERVERLIBS) -o $(SERVERPROG)
@@ -22,4 +16,4 @@ server: $(SERVEROBJS) $(SERVERHEADER)
 .SILENT:clean
 
 clean:
-	rm -f *.o $(CLIENTPROG) $(SERVERPROG)
+	rm -f *.o $(SERVERPROG)

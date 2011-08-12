@@ -14,11 +14,10 @@ int
 sock_init(struct server_data *server) {
 	struct sockaddr_in addr;
 	int val=1;
-	int s1, s2;
+	int s1,s2;
 	int ret = 0;
 
 	/* TCP listening socket */
-	;
   	
 	if ( (s1 = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
 		perror("socket()");
@@ -36,13 +35,13 @@ sock_init(struct server_data *server) {
 	else 
 	  	addr.sin_addr.s_addr = INADDR_ANY;
 	
+  	// set up the socket
 	if (setsockopt(s1, SOL_SOCKET, SO_REUSEADDR, &val, sizeof(val)) == -1) {
 		perror("setsockopt");
 		ret = -1;
 		goto ret_close_s1;
 	}
 
-  	// Open the socket
   	if(bind(s1, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
 		perror("bind");
 		ret = -1;
@@ -57,6 +56,7 @@ sock_init(struct server_data *server) {
 
 	server->lfd = s1;
 
+	if (verbose) printf("binding udp socket on port %d\n", ntohs(server->tun_port));
 	/* UDP tunnel socket */
 	if ( (s2 = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
 		printf("sock_init: error in SOCKET for udp socket\n");
@@ -108,7 +108,7 @@ udp_recv_cb(int sock, void *server, void *user_ctx) {
 #ifdef DBG
 		printf("received %d bytes from udp socket %s\n", l, buf);
 #endif
-		proto_handle_udp_msg(buf, l, from, fromlen, s);
+		proto_handle_udp_msg(buf, l, (struct sockaddr_in*)&from, s);
 	}
 	else {
 		if (verbose) printf("udp_recv_cb: read error\n");
@@ -118,10 +118,17 @@ udp_recv_cb(int sock, void *server, void *user_ctx) {
 
 int 
 server_init(struct server_data *server) {
+	char *viface = DEFAULT_VIFACE_NAME;
 
 	/* configuration init XXX TODO */
 	server->first_addr = DEFAULT_FIRST_ADDR;
 	server->last_addr = DEFAULT_LAST_ADDR;
+	
+	if (strlen(viface) > VIFACE_STR_LEN ){ 
+		if (verbose) printf("server_init: bad viface name\n");
+		return -1;
+	}
+	strcat(server->viface_name, viface);
 
 	if (server->first_addr == 0xffffffff) {
 		if (verbose) printf("server_init: bad first addres\n");
@@ -160,13 +167,13 @@ server_shutdown(struct server_data *server) {
 	struct client *n,*m;
 	struct list_head *l = &server->clients;
 
-	/* close tcp listen and udp socket */
-	sock_fini(server);
-
 	/* free clients */
 	list_for_each_entry_safe(n, m, l, list) {
 		client_shutdown(n, server);	
 	}
+	/* close tcp listen and udp socket */
+	sock_fini(server);
+
 
 	return;
 }
@@ -233,7 +240,8 @@ sock_accept(struct server_data *server) {
 					,ntohs(caddr.sin_port));
 
 	c = (struct client *) malloc(sizeof(struct client));
-	
+
+	INIT_LIST_HEAD(&c->tunnels);	
 	memcpy(&c->addr, &caddr, sizeof(struct sockaddr_in));
 	c->cfd = cfd;
 
@@ -291,8 +299,8 @@ client_shutdown(struct client *c, struct server_data *s) {
 		}
 	}
 
-	free(c);
-
 	/* TODO close tunnels, free vipa, remove all timeouts */
+	tunnel_close_all(s, c);
+	free(c);
 	return;
 }

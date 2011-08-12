@@ -145,16 +145,16 @@ again:
 }
 
 int
-ssl_write_n(SSL * ssl, unsigned char *buf, int len) {
-			
+ssl_write_n(SSL * ssl, unsigned char *buf, int len) {			
 	int r;
 
 	if ((r = SSL_write(ssl, buf, len)) <= 0) {
 		print_log("write error\n");
 	}
 
-	if (verbose) printf("ssl_write: %d bytes sent\n", r);
-	
+#ifdef DBG
+	printf("ssl_write_n: %d bytes sent\nbuf: %s", r, buf);	
+#endif
 	return r;
 }
 
@@ -211,10 +211,23 @@ ssl_check_error(SSL * ssl, int ret) {
 
 void 
 ssl_fini(void) {
+	int ret;
+	int err = 0;
 
 	if (ssl){
-		if (SSL_shutdown(ssl) < 1)
-			print_log("SSL_shutdown failed\n");
+_again:
+		switch (ret = SSL_shutdown(ssl)) {
+			case 1:
+				break;
+			case 0:
+				if (err)	
+					print_log("warning: SSL_shutdown failed\n");
+				err = 1;
+				goto _again;
+			default:		
+				print_log("warning: SSL_shutdown failed\n");
+		}
+
 		SSL_free(ssl);
 	}
 	

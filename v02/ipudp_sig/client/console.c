@@ -13,20 +13,21 @@ cmd_debugoff(char *b) {
 	verbose = 0;
 }
 
-/*	
-static void
-cmd_getfile(char *b)
-{
-	char * filename;
-	char cmd[100];
 
-	APPCONSOLE_FIRST_ARG(b, filename, "missing file name. Usage: cmd filename\n");
+static void 
+cmd_reqtun(char *b) {
+	char *dev;
+	struct ifreq ifr;
+
+	APPCONSOLE_FIRST_ARG(b, dev, "missing real device name. Es: req_tun eth0\n");
 	
-	sprintf(cmd, "GET_FILE %s\n", filename);
-
-	printf("command: %s", cmd);
-	do_getfile(cmd);
-}*/
+	strncpy(ifr.ifr_name,dev,IFNAMSIZ);
+	if (ioctl(c_data.tcpfd, SIOCGIFINDEX, &ifr) == -1) {
+		printf("%s: device not found\n",dev);
+		return;
+	}
+	do_reqtun(dev);
+}
 
 static void 
 cmd_getvaddr(char *b) {
@@ -47,12 +48,12 @@ cmd_quit(char *b) {
 	client_shutdown();
 }
 
-
 static cons_info_t commands[] = {
-	{ "q",     	"quit", 1, cmd_quit },
+	{ "q",			"quit", 1, cmd_quit },
 	{ "debug_on",	"enable debug", 8, cmd_debugon },
 	{ "debug_off",	"disable debug", 8, cmd_debugoff },
-	{ "get_vaddr",	"disable debug", 3, cmd_getvaddr},
+	{ "get_vaddr",	"request virtual address", 5, cmd_getvaddr},
+	{ "req_tun",	"establish ipudp tunnel", 5, cmd_reqtun},
 };
 
 static void

@@ -1,0 +1,92 @@
+
+CFLAGS += -Wall -O3
+ifeq ($(USE_THREADS),y)
+THREADS_POLICY= THREADS
+else
+THREADS_POLICY= NOTHREADS
+endif
+
+ifeq ($(USE_READLINE),y)
+RL_POLICY= USE_READLINE
+else
+RL_POLICY= NO_READLINE
+endif
+
+ifeq ($(DEBUG_POLICY),DEBUG)
+CPPFLAGS += -g -DDEBUG # enable for general debugging
+CFLAGS += -rdynamic # so we get syms during backtraces, used only for debugging
+endif
+
+CPPFLAGS += -I../include -D$(THREADS_POLICY) -D$(RL_POLICY)
+
+ifneq ($(LIB),)
+LIBLINK= lib$(LIB).so
+LIBVERS= $(LIBLINK).$(VERSION)
+INSLIBLINK= $(PREFIXLIB)/lib$(LIB).so
+INSLIB= $(INSLIBLINK).$(VERSION)
+
+BLDLIB_INST= ../.libs
+BLDLIBLINK= $(BLDLIB_INST)/lib$(LIB).so
+BLDLIB= $(BLDLIBLINK).$(VERSION)
+BLDLIBS= $(BLDLIB) $(BLDLIBLINK)
+endif
+
+BLDHDR_INST= .include
+INSHDRS= $(patsubst %,$(PREFIXINC)/%,$(INC))
+BLDHDRS= $(patsubst %,$(BLDHDR_INST)/%,$(INC))
+
+TESTOBJS= $(patsubst %,%.o,$(TESTS))	
+
+LDLIBS += $(patsubst %,-l%,$(DEP_LIBS))
+CPPFLAGS += -I$(BLDHDR_INST)
+LIBLDFLAGS += -L$(BLDLIB_INST)
+comma:= ,
+TESTLDFLAGS += -Wl$(comma)-rpath $(BLDLIB_INST) $(LIBLDFLAGS)
+$(TESTS) : LDFLAGS = $(LIBLDFLAGS) $(TESTLDFLAGS) -l$(LIB)
+
+all: $(BLDHDRS) $(LIBLINK) $(BLDLIBS) $(TESTS)
+
+$(LIBVERS): $(OBJS)
+	$(LD) -shared -o $@ $(OBJS) $(LIBLDFLAGS) $(LDLIBS) $(LDFLAGS)
+
+$(OBJS): $(INC) Makefile
+
+$(LIBLINK): $(LIBVERS)
+	$(RM) $@
+	ln -s $(LIBVERS) $@
+
+install: all $(PREFIXLIB) $(PREFIXINC) $(INSLIB) dlink $(INSLIBLINK) $(INSHDRS)
+
+dlink:
+	$(RM) $(INSLIBLINK)
+
+$(INSLIBLINK):
+	cd $(PREFIXLIB); ln -s $(LIBVERS) $(LIBLINK)
+
+$(BLDLIBLINK):
+	$(RM) $@
+	cd $(BLDLIB_INST); ln -s $(LIBVERS) $(LIBLINK)
+
+$(PREFIXLIB)/%: %
+	install $< $(PREFIXLIB);
+
+$(BLDLIB_INST)/%: %
+	install $< $(BLDLIB_INST);
+
+$(PREFIXINC)/%: %
+	install $< $(PREFIXINC);
+
+$(BLDHDR_INST)/%: %
+	install $< $(BLDHDR_INST);
+
+$(PREFIXLIB) $(PREFIXINC):
+	mkdir -p $@
+
+uninstall:
+	$(RM) $(INSLIB) $(INSLIBLINK) $(INSHDRS)
+
+runtest:
+	$(patsubst %,./% &&,$(RUNTESTS)) echo OK
+
+clean:
+	$(RM) *.o *~ $(LIBLINK) $(LIBVERS) $(TESTS) $(EXTRACLEAN)

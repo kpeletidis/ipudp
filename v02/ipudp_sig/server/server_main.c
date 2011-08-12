@@ -14,7 +14,7 @@ void signal_handler(int sig) {
 }
 
 static int __init(struct server_data *data) {
-
+	
 	if (mainloop_init(NULL) < 0)
 		return -1;
 	if (verbose) printf("mainloop succesfully initialized\n");
@@ -22,6 +22,10 @@ static int __init(struct server_data *data) {
 	if (server_init(data) < 0)
 		return -1;
 	if (verbose) printf("server succesfully initialized\n");
+
+	if (ipudp_conf_init(data) < 0)
+		return -1;
+	if (verbose) printf("ipudp_conf succesfully initialized\n");
 
 	if (ssl_init(data) < 0)
 		return -1;
@@ -36,10 +40,11 @@ static int __init(struct server_data *data) {
 }
 
 static void __fini(struct server_data *data) {
-	//ssl_fini(data);
 	if (verbose) printf("closing ipudp_server\n");
 	server_shutdown(data);	
 	mainloop_destroy();
+	ssl_fini(data);
+	ipudp_conf_fini(data);
 }
 
 
@@ -78,7 +83,8 @@ main(int argc, char **argv)
 	}
 
 	if (localaddr) {
-		if ((s_data.local_addr = inet_pton(AF_INET, localaddr, &s_data.local_addr) < 0)){
+		inet_pton(AF_INET, localaddr, &s_data.local_addr);
+		if ((s_data.local_addr == 0)){
 			printf("bad local address\n");
 			usage();
 		}

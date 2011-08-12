@@ -18,35 +18,33 @@ sighand(int s)
 
 static int 
 do_select(int cfd) {
-        fd_set fds[1];
-        int maxfd;
-        struct timeval *tv;
-
-        maxfd = cfd;
-        //maxfd = max(lfd, xxx);
+	fd_set fds[1];
+	int maxfd;
+	struct timeval timeout;
 	
+	timeout.tv_sec = DEFAULT_KEEPALIVE_TIMEOUT;
+	timeout.tv_usec = 0;
+
+	maxfd = cfd;
+	//maxfd = max(lfd, xxx);
+
 	while (!clientshutdown) {
                 FD_ZERO(fds);
                 FD_SET(cfd, fds);
                 //FD_SET(xxx, fds);
 		
-		tv = NULL;
-		
-		if (select(maxfd + 1, fds, NULL, NULL, tv) < 0) {
+		if (select(maxfd + 1, fds, NULL, NULL, &timeout) < 0) {
                         if (errno == EINTR) {
                                 continue;
                         }
                         print_log("do_select: select error\n");
                         return (-1);
                 }
-
-
-                if (FD_ISSET(cfd, fds)) {
-                 	console_read_char();    
-                }
-	
+                if (FD_ISSET(cfd, fds))
+                 	console_read_char();
+				else
+					;//tunnel_keep_alive(&timeout);
 	}
-
 	return 0;
 }
 
@@ -58,8 +56,11 @@ int main(int argc, char **argv) {
 	char *addrstr;
 	verbose = 0;
 
-	while((c = getopt(argc, argv, "p:a:cv"))!= -1) {
+	while((c = getopt(argc, argv, "u:p:a:cv"))!= -1) {
 		switch (c) {
+		case 'u':
+			uport = atoi(optarg);
+			break;
 		case 'p':
 			port = atoi(optarg);
 			break;
@@ -71,9 +72,6 @@ int main(int argc, char **argv) {
 			break;
 		case 'a':
 			addrstr = optarg;
-			break;
-		case 'u':
-			uport = atoi(optarg);
 			break;
 		default:
 			usage();
@@ -103,20 +101,27 @@ int main(int argc, char **argv) {
   	c_data.udp_server.sin_port = htons(uport);
   	inet_pton(AF_INET, addrstr, &c_data.udp_server.sin_addr);
 
-	if (console) {
-		if (console_ini() < 0)
-			exit(-1);
-	}
-		
 	if (client_init() < 0) {
 		print_log("client_init() error\n");
 		goto quit;
-	}	
+	}
+
+	if (ipudp_conf_init() < 0) {
+		print_log("ipudp_conf_init() error\n");
+		goto quit;
+	}
+
 	if (sock_init_connect() < 0)
 		goto quit;
 
 	if ((ssl_init() < 0))
 		goto quit;
+	
+	if (console) {
+		if (console_ini() < 0)
+			goto quit;
+		c_data.console = 1;
+	}
 
 	/**/
 
@@ -126,11 +131,12 @@ int main(int argc, char **argv) {
 	if (console)
 		do_select(0);
 	else 
-		test_send();
+		;//test_send();
 
 quit:
     client_fini();
-	console_fini();
+	if (c_data.console)
+		console_fini();
 
-	exit(0);
+	return 0;
 }

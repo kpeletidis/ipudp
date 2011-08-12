@@ -1,12 +1,12 @@
 PROG = client
 
-OBJS = mainloop.o ssl.o client.o console.o client_main.o utils.o proto.o ipudp_conf.o
+OBJS = mainloop.o ssl.o client.o console.o client_main.o utils.o proto.o ipudp_conf.o tunnel.o
 
 HEADERS = ipudp_client.h list.h mainloop.h
-CFLAGS += -Wall -Ilib/ -DDBG
+CFLAGS += -Wall -Ilib/ -I../ipudp_conf/ -I../lib -I../../ipudp_mod/ -DDBG -DUSERSPACE
 
 DEPLIB = -L.libs/ -lappconsole -Wl,-rpath,.libs/ 
-LIBS = $(DEPLIB) -lssl 
+LIBS = $(DEPLIB) -lssl  -L../lib/ -lipudp_conf
 
 all: client
 

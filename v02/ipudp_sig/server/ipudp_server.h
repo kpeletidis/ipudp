@@ -13,6 +13,7 @@
 #include <arpa/inet.h>
 #include <stdio.h>
 #include <netinet/in.h>
+#include <net/if.h>
 
 #include <openssl/ssl.h>
 #include <openssl/err.h>
@@ -26,21 +27,38 @@
 #define DEFAULT_UDP_PORT 50000
 #define MAX_LINE_LEN 256
 
+#define TOKEN_LEN 8
+
 #define DEFAULT_FIRST_ADDR 0x0A640001 	//10.100.0.1
 #define DEFAULT_LAST_ADDR 0x0A6400FE 	//10.100.0.254
+#define DEFAULT_VIFACE_NAME "ipudp0"
+
+#define VIFACE_STR_LEN 12 
+
+enum {		
+	IPUDP_CONF_SET_VADDR = 1,
+	IPUDP_CONF_ADD_VIFACE,
+	IPUDP_CONF_DEL_VIFACE,
+	IPUDP_CONF_ADD_TUNNEL,
+	IPUDP_CONF_DEL_TUNNEL,
+};
+
+enum {
+	TUN_STATE_WAIT_CREATE = 1,
+	TUN_STATE_ESTABLISHED,
+};
 
 extern int verbose;
 
-struct vaddr {
+struct 
+tunnel {	
 	struct list_head list;
-	__u32 addr;					//overlay addr
-	struct client *client;		//client to which the addr is assigned
-};
-
-struct tunnel {	
 	int tid;					//unique tunnel id
-	struct sockaddr_in addr; 	//client address:port of a UDP tunnel
-	int STATE;
+	struct sockaddr_in addr; 	//client address:port of the UDP tunnel
+	int state;
+	int pending_req_seq;
+	char token_server[2*TOKEN_LEN + 1];
+	char token_client[2*TOKEN_LEN + 1];
 };
 
 struct pending_tun_req {
@@ -49,10 +67,16 @@ struct pending_tun_req {
 	struct client *client;
 };
 
+struct vaddr {
+	struct list_head list;
+	__u32 addr;                     //overlay addr
+	struct client *client;          //client to which the addr is assigned
+};
 struct 
 server_data {
 	int lfd;					//tcp listening socket
 	int tunfd;					//udp socket
+	char dev_name[IFNAMSIZ];
 	__u32 local_addr;
 	__u16 local_port;
 	__u16 tun_port;				//udp listening port
@@ -61,6 +85,7 @@ server_data {
 	SSL_CTX *ssl_ctx;			//SSL context
 	struct list_head v_addrs;
 								//list of allocated client overlay addresses
+	char viface_name[VIFACE_STR_LEN + 1];
 	__u32 first_addr;			//first address - server overlay address
 	__u32 last_addr;
 };
@@ -98,6 +123,17 @@ void client_shutdown(struct client *, struct server_data *);
 
 /* proto.c */
 void proto_handle_msg(char *, int, struct client *, struct server_data *);
-void proto_handle_udp_msg(char *, int, struct sockaddr, int, struct server_data*);
+void proto_handle_udp_msg(char *, int, struct sockaddr_in *, struct server_data*);
+
+/* ipudp_conf.c */
+int ipudp_conf_cmd(int, void **);
+int ipudp_conf_init(struct server_data *); 
+int ipudp_conf_fini(struct server_data *); 
+
+/* tunnel.s */
+void tunnel_close_all(struct server_data *, struct client *);
+void tunnel_set_token(char *);
+int tunnel_configure(struct server_data *, struct client *, struct tunnel *, struct sockaddr_in *);
+void tunnel_close(struct server_data *, struct tunnel *);
 
 #endif

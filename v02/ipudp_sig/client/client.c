@@ -2,8 +2,9 @@
 
 int 
 sock_init_connect(void) {
-	int sock, sock2;
-	/* TCP */
+	int sock;
+
+	print_log("Connecting to server...\a");
   	sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 
 	if ( connect(sock, (const struct sockaddr *)&c_data.tcp_server, sizeof(c_data.tcp_server)) < 0 ) { 
@@ -16,11 +17,6 @@ sock_init_connect(void) {
 	
 	c_data.tcpfd = sock;
 
-	/* UDP */
-  	sock2 = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-
-	c_data.udpfd = sock2;
-
 	return 0;
 }
 
@@ -28,7 +24,8 @@ int
 client_init(void) {
 	/*TODO*/
 	clientshutdown = 0;
-
+		
+	INIT_LIST_HEAD(&c_data.tunnels);	
 	return 0;
 }
 
@@ -41,11 +38,11 @@ client_shutdown(void) {
 void
 sock_fin(void) {
 	close(c_data.tcpfd);
-	close(c_data.udpfd);
 }
 
 void
 client_fini() {
+	tunnel_close_all();
 	ssl_fini();
 	sock_fin();
 	ipudp_conf_fini();

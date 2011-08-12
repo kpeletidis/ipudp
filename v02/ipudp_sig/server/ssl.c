@@ -202,6 +202,10 @@ ssl_write_n(SSL * ssl, unsigned char *buf, int len) {
 		if (verbose) printf("write error\n");
 	}
 
+#ifdef DBG
+	printf("%s", buf);
+#endif
+
 	if (verbose) printf("ssl_write: %d bytes sent\n", r);
 	
 	return r;

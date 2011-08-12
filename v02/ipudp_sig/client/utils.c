@@ -8,6 +8,7 @@ print_log(char *p) {
 		;
 }
 
+/*
 void 
 test_send() {
 	unsigned char *buf="ciao\n";
@@ -16,4 +17,4 @@ test_send() {
 	sendto(c_data.udpfd, (void *)buf, 5, 0,(struct sockaddr *)&c_data.udp_server, sizeof(struct sockaddr_in));
 	sleep(5);	
 	return;
-}
+}*/
