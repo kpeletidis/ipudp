@@ -4,7 +4,7 @@
 #define CMD_GET_VADDR "0001" //SSL - req: "0001" -> resp: "ret_code:vaddr"
 #define CMD_REQUEST_TUNNEL "0002" // SSL - req: "0002:token_client" --> resp: "ret_code:token_server"
 #define CMD_CREATE_TUNNEL "0003" // UDP - req: "0003:seq:token_server" --> resp: "ret_code:seq:token_client"
-#define CMD_KEEP_ALIVE "0004" // UDP - req: "0004:seq" --> resp: "ret_code:seq"
+#define CMD_KEEP_ALIVE "0004" // UDP - req: "XXXX:seq" --> resp: "ret_code:seq"
 #define CMD_SHUTDOWN "0020"	// SSL - 
 
 #define RET_OK "00"
@@ -65,6 +65,7 @@ handle_request_tunnel(char *buf, struct client *c, struct server_data *s) {
 		reason = "memory error";
 		goto send_resp;
 	}
+	memset(tun,0,sizeof(*tun));
 	
 	//first arg - cmd
 	memset(arg,0,blen);
@@ -77,7 +78,7 @@ handle_request_tunnel(char *buf, struct client *c, struct server_data *s) {
 	//second arg - token
 	tunnel_set_token(tun->token_server);
 	
-	memset(tun->token_client, 0, 2*TOKEN_LEN+1);
+	//memset(tun->token_client, 0, 2*TOKEN_LEN+1);
 	memcpy(tun->token_client, p, 2*TOKEN_LEN);
 
 send_resp:
@@ -110,8 +111,9 @@ handle_create_tunnel(char *buf, struct server_data *s, struct sockaddr_in *from)
 	int blen = strlen(buf), seq, found = 0;
 	char arg[blen];
 	char *p, *reason, *ret_code=RET_OK, *token, resp[128] = {0};
+	struct timeval now;
 
-//UDP - req: "0003:seq:token_server" --> resp: "ret_code:seq:token_client"
+	//UDP - req: "0003:seq:token_server" --> resp: "ret_code:seq:token_client"
 	if (verbose) printf("handling create tunnel\n");
 
 	//first arg - cmd - just format verification
@@ -157,12 +159,24 @@ handle_create_tunnel(char *buf, struct server_data *s, struct sockaddr_in *from)
 		reason = "tunnel configuration error";
 		goto send_err;
 	}
-	sprintf(resp, "%s:%02d:%s\n", ret_code, seq, t->token_client);
 
+	if (tunnel_set_rule(s, c, t) != 0) {
+		tunnel_close(s, t);
+		ret_code = RET_ERR;
+		reason = "tunnel rule configuration error";
+		goto send_err;
+	}
+
+	gettimeofday(&now, NULL);
+	t->last_ka = now;
+
+	sprintf(resp, "%s:%02d:%s\n", ret_code, seq, t->token_client);
 	if (send_resp(resp, NULL, from, s->tunfd, seq) < 0) {
 		tunnel_close(s, t);
 		return;
 	}
+
+	t->state = TUN_STATE_ESTABLISHED;
 
 	return;
 
@@ -173,8 +187,72 @@ send_err:
 	return;
 }
 
+static int
+__is_keepalive(char *buf) {
+	__u32 escape = 0xffffffff;
+
+	if (!memcmp(buf,&escape,4))
+		return 1;
+	else
+		return 0;		
+}
+
+
 static void
-handle_keep_alive(char *buf, struct server_data *s, struct sockaddr_in *from) {
+handle_keep_alive(char *buf, int len, struct server_data *s, struct sockaddr_in *from) {	
+	char *p = buf + 4;
+	char resp[64] = {0}, *reason;
+	struct client *c;
+	struct tunnel *t;
+	int found = 0, seq;
+	char *ret_code = RET_OK;
+	struct timeval now;
+
+	//escape sequence for keepalive
+	resp[0]= 0xff;
+	resp[1]= 0xff;
+	resp[2]= 0xff;
+	resp[3]= 0xff;
+
+	if (verbose) printf("handling keepalive\n");
+	//seq
+	if (!(seq=atoi(p)) || (len > 32)) {
+		ret_code = RET_ERR;
+		reason = "bad format";
+		goto send_err;
+	}
+
+	//TODO use a tunnel hashtable indexed by the sockaddr
+	list_for_each_entry(c, &s->clients, list) {
+		list_for_each_entry(t, &c->tunnels, list) {
+			if (!memcmp(&t->addr, from, sizeof(struct sockaddr_in))) {
+				found = 1;
+				break;
+			}
+		}
+		if (found)
+			break;
+	}
+		
+	if (!found){
+		ret_code = RET_ERR;
+		reason = "no active tunnel";
+		goto send_err;
+	}
+
+	sprintf(resp+4, "%s:%u\n", ret_code, seq);
+	sendto(s->tunfd, resp, strlen(resp+4)+4, 0,
+            (struct sockaddr *)&t->addr, sizeof(struct sockaddr_in));
+	
+	gettimeofday(&now, NULL);
+	t->last_ka = now;
+
+	return;
+send_err:
+	sprintf(resp+4, "%s:%02u:%s\n", ret_code, seq, reason);	
+
+	sendto(s->tunfd, resp, strlen(resp+4)+4, 0,
+            (struct sockaddr *)&t->addr, sizeof(struct sockaddr_in));
 	return;
 }
 
@@ -239,6 +317,7 @@ handle_unknown_cmd(struct server_data *s, struct client *c, struct sockaddr_in *
 	sprintf(resp, "%s:%s\n", RET_ERR, "unknown message");	
 	send_resp(resp, c, from, s->tunfd, seq);
 }
+
 void
 handle_bad_format(struct server_data *s, struct client *c, struct sockaddr_in *from){
 	char resp[64];
@@ -275,11 +354,11 @@ proto_handle_udp_msg(char *buf, int len, struct sockaddr_in *from, struct server
 	}
 	else
 		buf[len - 1] = '\0';
-
-	if (__is_cmd_equal(buf, CMD_CREATE_TUNNEL))
+	//this ks thing should go into the module... for now let's keep it here...
+	if (__is_keepalive(buf))
+		handle_keep_alive(buf, len, s, (struct sockaddr_in *)from);
+	else if (__is_cmd_equal(buf, CMD_CREATE_TUNNEL))
 		handle_create_tunnel(buf, s, (struct sockaddr_in *)from);
-	else if (__is_cmd_equal(buf, CMD_KEEP_ALIVE))
-		handle_keep_alive(buf, s, (struct sockaddr_in *)from);
 	else
 		handle_unknown_cmd(s, NULL, from);
 

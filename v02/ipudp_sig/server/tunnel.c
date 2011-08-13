@@ -10,14 +10,15 @@ void __set_token_string(char *buf) {
 	}
 }
 
-void tunnel_close(struct server_data *s, struct tunnel *t) {
+void tunnel_close(struct server_data *s/*XXX useless*/, struct tunnel *t) {
 	void *arg[2];
 	arg[0] = s;
 	arg[1] = t;
 
 	if (verbose) printf("closing tunnel %d\n", t->tid);
-
-	ipudp_conf_cmd(IPUDP_CONF_DEL_TUNNEL, arg);
+	
+	if (t->tid)
+		ipudp_conf_cmd(IPUDP_CONF_DEL_TUNNEL, arg);
 	list_del(&t->list);
 	free(t);
 }
@@ -37,14 +38,53 @@ void tunnel_set_token(char *buf) {
 
 int tunnel_configure(struct server_data *s, struct client *c, struct tunnel *t, struct sockaddr_in *from){
 	void *arg[2];
-	int ret;
 
 	memcpy(&t->addr, from, sizeof(struct sockaddr_in));
 
 	arg[0] = s;
 	arg[1] = t;
 
-	ret = ipudp_conf_cmd(IPUDP_CONF_ADD_TUNNEL, arg);
+	return ipudp_conf_cmd(IPUDP_CONF_ADD_TUNNEL, arg);
+}
 
-	return ret;
+int tunnel_set_rule(struct server_data *s, struct client *c, struct tunnel *t){
+	void *arg[3];
+
+	arg[0] = s;
+	arg[1] = c;
+	arg[2] = t;
+
+	return ipudp_conf_cmd(IPUDP_CONF_ADD_RULE, arg);
+}
+
+void tunnel_check_keepalive(void *a, void *user_ctx /*ignored*/) {
+	struct server_data *s = (struct server_data *)a;
+	struct timeval now, res;
+	struct client *c;
+	struct tunnel *t,*p;
+
+	gettimeofday(&now, NULL);
+
+	if (verbose) printf("checking keepalive status...\n");
+
+	list_for_each_entry(c, &s->clients, list) {
+		list_for_each_entry_safe(t, p, &c->tunnels, list) {
+			timersub(&now, &t->last_ka, &res);
+			printf("now %d\n", now.tv_sec);
+			printf("last ta %d\n", t->last_ka.tv_sec);
+			printf("res sec %d\n", res.tv_sec);
+			if (res.tv_sec > TUNNEL_MAX_IDLE_TIME)  {
+				if (verbose) printf("tunnel %d expired\n", t->tid);
+				tunnel_close(s, t);
+			}
+		}
+	}
+
+	//re-schedule the cb
+	if ((mainloop_register_timeout(KEEPALIVE_CHECK_TO, 0, tunnel_check_keepalive, (void *)s, NULL) < 0)) {
+		printf("error: mainloop_register_timeout error\n");
+		server_shutdown(s);
+	}
+	
+	if (verbose) printf("done\n");
 }

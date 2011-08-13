@@ -111,7 +111,9 @@ udp_recv_cb(int sock, void *server, void *user_ctx) {
 		proto_handle_udp_msg(buf, l, (struct sockaddr_in*)&from, s);
 	}
 	else {
-		if (verbose) printf("udp_recv_cb: read error\n");
+		if (verbose) printf("udp_recv_cb: recvfrom error - len %d - buf %s\n",l,buf);
+		perror("recvfrom");
+
 	}
 	return;
 }
@@ -157,8 +159,14 @@ server_init(struct server_data *server) {
 		return -1;
 	}
 
-		
+	/* keepalive timeout cb */	
+	if ((mainloop_register_timeout(KEEPALIVE_CHECK_TO, 0, tunnel_check_keepalive, (void *)server, NULL) < 0)) {
+		printf("server_init: mainloop_register_timeout error\n");
+		return -1;
+	}
+
 	if (verbose) printf("server_init: DONE!\n");	
+
 	return 0;
 }
 
@@ -240,6 +248,7 @@ sock_accept(struct server_data *server) {
 					,ntohs(caddr.sin_port));
 
 	c = (struct client *) malloc(sizeof(struct client));
+	memset(c,0,sizeof(*c));
 
 	INIT_LIST_HEAD(&c->tunnels);	
 	memcpy(&c->addr, &caddr, sizeof(struct sockaddr_in));

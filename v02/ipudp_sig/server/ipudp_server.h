@@ -35,12 +35,16 @@
 
 #define VIFACE_STR_LEN 12 
 
+#define KEEPALIVE_CHECK_TO 30
+#define TUNNEL_MAX_IDLE_TIME 90
+
 enum {		
 	IPUDP_CONF_SET_VADDR = 1,
 	IPUDP_CONF_ADD_VIFACE,
 	IPUDP_CONF_DEL_VIFACE,
 	IPUDP_CONF_ADD_TUNNEL,
 	IPUDP_CONF_DEL_TUNNEL,
+	IPUDP_CONF_ADD_RULE,
 };
 
 enum {
@@ -59,6 +63,7 @@ tunnel {
 	int pending_req_seq;
 	char token_server[2*TOKEN_LEN + 1];
 	char token_client[2*TOKEN_LEN + 1];
+	struct timeval last_ka;
 };
 
 struct pending_tun_req {
@@ -135,5 +140,7 @@ void tunnel_close_all(struct server_data *, struct client *);
 void tunnel_set_token(char *);
 int tunnel_configure(struct server_data *, struct client *, struct tunnel *, struct sockaddr_in *);
 void tunnel_close(struct server_data *, struct tunnel *);
+int tunnel_set_rule(struct server_data *, struct client *, struct tunnel *);
+void tunnel_check_keepalive(void *, void *);
 
 #endif

@@ -42,6 +42,7 @@ void mainloop_unregister_sock(int, mainloop_event_type);
 
 int mainloop_register_timeout(unsigned int, unsigned int,
 				mainloop_timeout_handler, void *, void *);
+
 int mainloop_cancel_timeout(mainloop_timeout_handler, void *, void *);
 
 int mainloop_init(void *);

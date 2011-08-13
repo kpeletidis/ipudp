@@ -141,7 +141,26 @@ printf("returned tid %d\n", tun.tid);
 			break;
 		}
 
-		break;
+		case IPUDP_CONF_ADD_RULE: {
+			ipudp_rule_multi_v4 rule;
+			ipudp_viface_params viface;
+
+			struct server_data *s = args[0];
+			struct client *c = args[1];
+			struct tunnel *t = args[2];
+
+			memset(&rule, 0, sizeof(rule));
+			memset(&viface, 0, sizeof(viface));
+
+			memcpy(viface.name, s->viface_name, MAX_IPUDP_DEV_NAME_LEN);
+			rule.type = MODE_MULTI_V4;
+			rule.tun_id = t->tid;
+            rule.dest = c->v_addr;
+			
+			ret = do_cmd_add_rule(&viface, &rule, sizeof(rule));
+
+			break;
+		}
 
 	}	
 	return ret;
