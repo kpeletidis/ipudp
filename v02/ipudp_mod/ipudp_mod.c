@@ -575,13 +575,12 @@ new_dev_not_allowed(void) {
 
 static void 
 ipudp_clean_priv(ipudp_dev_priv * p) {
-	ipudp_list_tun_flush(p);
-		
 	if (p->params.mode == MODE_MULTI_V4) {
 		ipudp_list_rules_flush(p);
-		kfree(p->fw_rules);
+		if (p->fw_rules) kfree(p->fw_rules);
 	}
 
+	ipudp_list_tun_flush(p);
 	return;
 }
 
