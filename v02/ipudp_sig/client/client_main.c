@@ -43,7 +43,7 @@ do_select(int cfd) {
                 if (FD_ISSET(cfd, fds))
                  	console_read_char();
 				else
-					;//tunnel_keep_alive(&timeout);
+					tunnel_keep_alive(&timeout);
 	}
 	return 0;
 }
@@ -127,6 +127,7 @@ int main(int argc, char **argv) {
 
 	signal(SIGINT, sighand);
     signal(SIGTERM, sighand);
+    signal(SIGKILL, sighand);
 
 	if (console)
 		do_select(0);

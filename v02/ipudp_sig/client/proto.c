@@ -4,13 +4,13 @@
 #define CMD_GET_VADDR "0001" //SSL - req: "0001" -> resp: "ret_code:vaddr"
 #define CMD_REQUEST_TUNNEL "0002" // SSL - req: "0002:token_client" --> resp: "ret_code:token_server"
 #define CMD_CREATE_TUNNEL "0003" // UDP - req: "0003:seq:token_server" --> resp: "ret_code:seq:token_client"
-#define CMD_KEEP_ALIVE "0004" // UDP - req: "0004:seq" --> resp: "ret_code:seq"
 #define CMD_SHUTDOWN "0020"	// SSL - 
+//a keepalive starts with an escape sequence 0xffffffff
 
 #define RET_OK "00"
 #define RET_ERR "11"
 
-#define UDP_TIMEOUT 2
+#define UDP_TIMEOUT 3
 
 static __u32 seq_num = 0;
 
@@ -27,15 +27,23 @@ int
 timeout_recvfrom(int sock, void *data, int l, int to) {
 	fd_set socks;
 	struct timeval t;
+	int i;
 	
 	FD_ZERO(&socks);
 	FD_SET(sock, &socks);
 	t.tv_sec = to;
-	if (select(sock + 1, &socks, NULL, NULL, &t)) {
-		return recvfrom(sock, data, l, 0, NULL, NULL);
+	t.tv_usec = 0;
+
+	i = select(sock + 1, &socks, NULL, NULL, &t);
+	switch(i) {
+		case 0:
+			print_log("udp recvfrom timeout expired\n");
+			return -2;
+		case -1:
+			return -1;
+		default:
+			return recvfrom(sock, data, l, 0, NULL, NULL);
 	}
-	else
- 		return -2;
 }
 
 //check if return code is ok|error and move the pointer p on the xent argument
@@ -83,6 +91,11 @@ int  __get_next_arg(char *buf, char **p, char *arg, int max_len) {
 	return 0;
 }
 
+static int send_keepalive(char *buf, struct tunnel *t, int l) {
+		return sendto(t->fd, (void *)buf, l, 0,
+			(struct sockaddr *)&c_data.udp_server, sizeof(struct sockaddr_in));
+}
+
 static int 
 send_req(char *buf, struct tunnel *t) {
 	if (!t) 
@@ -95,7 +108,7 @@ send_req(char *buf, struct tunnel *t) {
 
 int
 do_reqtun(char *dev) {
-	char buf[1024] = {0}, tmp[256] = {0};
+	char req[1024] = {0}, buf[1024] = {0}, tmp[256] = {0};
 	int l = 0, try = 0;
 	__u32 seq, ret_seq;
 	char *p = NULL;
@@ -145,8 +158,8 @@ do_reqtun(char *dev) {
 	/* send udp request with sec:token */
 	seq = __get_seq_num();
 	
-	memset(buf, 0, 1024);
-	sprintf(buf,"%s:%u:%s\n", CMD_CREATE_TUNNEL, seq, tun->token_server);
+	memset(req, 0, 1024);
+	sprintf(req,"%s:%u:%s\n", CMD_CREATE_TUNNEL, seq, tun->token_server);
     
 send_again:
 	try ++;
@@ -154,7 +167,7 @@ send_again:
 	printf("do_reqtun: try %d\n", try);
 #endif
 
-	if (send_req(buf, tun) < 0){
+	if (send_req(req, tun) < 0){
 		print_log("do_reqtun: send_req error\n");
 		return -1;
 	}
@@ -224,75 +237,84 @@ free_tun:
 	return -1;
 }
 
+static int
+__is_keepalive(char *buf) {
+    __u32 escape = 0xffffffff;
+
+    if (!memcmp(buf,&escape,4)) 
+        return 1;
+    else
+        return 0;
+}
+
 int
 do_keepalive(struct tunnel *tun) {
-	char buf[256] = {0}, tmp[32] = {0};
+	char buf[256] = {0}, resp[256] = {0}, tmp[32] = {0};
 	int l = 0, try = 0;
 	char *p = NULL;
 	__u32 seq = __get_seq_num();
 	int ret_seq;
-	sprintf(buf, "%s:%u\n", CMD_KEEP_ALIVE, seq);
 
 	/* send udp request with code:sec */
 	seq = __get_seq_num();
 	
-	memset(buf, 0, 1024);
-	sprintf(buf,"%s:%u\n", CMD_KEEP_ALIVE, seq);
-    
+	memset(buf, 0, 256);
+	sprintf(buf+4,"%u\n", seq);
+	buf[0] = 0xff;
+	buf[1] = 0xff;
+	buf[2] = 0xff;
+	buf[3] = 0xff;
+
 send_again:
 	try ++;
 #ifdef DBG
 	printf("do_keepalive: try %d\n", try);
 #endif
 
-	if (send_req(buf, tun) < 0){
+	if (send_keepalive(buf, tun, strlen(buf+4) + 4) < 0){
 		print_log("do_keepalive: send_req error\n");
-		goto free_tun;
+		goto ret_err;
 	}
 
 recv_again:
 	/* get resp */
-	memset(buf, 0, 1024);
-	switch (l = timeout_recvfrom(tun->fd, buf, 1024, UDP_TIMEOUT)) {
+	memset(resp, 0, 256);
+	switch (l = timeout_recvfrom(tun->fd, resp, 256, UDP_TIMEOUT)) {
 		case -1:
 			print_log("do_keepalive: recvfrom_error");
-			goto free_tun;
+			goto ret_err;
 		case -2:
 			if (try > 3) 
-				goto free_tun;
+				goto ret_err;
 			else
 				goto send_again;
 		default:
 			break;
 	}
 
-#ifdef DBG
-	printf("do_keepalive: recvfrom %d bytes - resp %s\n", l, buf);
-#endif
 	/* parse resp */
-	if (__is_retcode_ok(buf, &p)) {
+	if ( __is_keepalive(resp) && __is_retcode_ok(resp + 4, &p)) {
 		//get sequence number
 		if ((ret_seq = (__u32)atoi(p)) == 0) 
 			goto bad_format;
-		if (ret_seq != seq) //silently discard and receive again
+		if ((ret_seq != seq)){ //silently discard and receive again
 			goto recv_again;
-
+}
 		print_log("do_keepalive: ok\n");
 	}
 	else if(p) {
 		sprintf(tmp, "do_keepalive: error, reason: %s\n", p);
 		print_log(tmp);
-		goto free_tun;
+		goto ret_err;
 	}
 	else {
 bad_format:
 		print_log("do_keepalive: keepalive response error. Bad format\n");
-		goto free_tun;
+		goto ret_err;
 	}
 	return 0;
 
-free_tun:
-	tunnel_close(tun);
+ret_err:
 	return -1;
 }
 
