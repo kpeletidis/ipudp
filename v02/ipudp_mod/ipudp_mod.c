@@ -388,7 +388,7 @@ ipudp_checksum4_ok(struct iphdr *iph, struct udphdr *udph) {
 
 static int 
 __is_keepalive(struct sk_buff *skb) {
-	__u32 escape = 0;
+	__u32 escape = 0xffffffff;
 	__u8 *p = skb->data + 28;
 
 	if (!memcmp(p, &escape, 4)) {
