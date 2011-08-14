@@ -2,7 +2,7 @@
 
 #define KEYFILE "./certs/server.key"
 #define CERTFILE "./certs/server.pem"
-#define CAPATH "/etc/ssl/certs"
+#define CAPATH "./certs"
 #define DHFILE "./certs/dh.pem"
 
 
@@ -36,9 +36,9 @@ load_dh_params(SSL_CTX *ctx,const char *file) {
 }
 
 int verify_callback(int preverify_ok, X509_STORE_CTX *x509_ctx) {
-	printf("XXX inside verify callback XXX\n");
-	
-	return 1;
+
+	/* put something here if needed */	
+	return preverify_ok;
 }
 
 int 
@@ -85,7 +85,7 @@ ssl_init(struct server_data *server) {
 	}	
 	if (verbose) printf("SSL context successfully initialized\n");
    
-    //SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER|SSL_VERIFY_FAIL_IF_NO_PEER_CERT|SSL_VERIFY_CLIENT_ONCE, verify_callback);
+    SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER|SSL_VERIFY_FAIL_IF_NO_PEER_CERT, verify_callback);
 
 	server->ssl_ctx = ctx;
 	
