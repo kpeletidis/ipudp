@@ -196,7 +196,6 @@ client_conn_cb(int sock, void *s, void *c) {
 
 	ret = ssl_readline(ssl, buf, MAX_LINE_LEN, &len);
 	switch(SSL_get_error(ssl, ret)){
-
 	case SSL_ERROR_NONE:
 		//serve the request
 #ifdef DBG
@@ -248,7 +247,7 @@ sock_accept(struct server_data *server) {
 					,ntohs(caddr.sin_port));
 
 	c = (struct client *) malloc(sizeof(struct client));
-	memset(c,0,sizeof(*c));
+	memset(c,0,sizeof(struct client));
 
 	INIT_LIST_HEAD(&c->tunnels);	
 	memcpy(&c->addr, &caddr, sizeof(struct sockaddr_in));

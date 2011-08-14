@@ -35,7 +35,7 @@
 
 #define VIFACE_STR_LEN 12 
 
-#define KEEPALIVE_CHECK_TO 30
+#define KEEPALIVE_CHECK_TO 6
 #define TUNNEL_MAX_IDLE_TIME 90
 
 enum {		

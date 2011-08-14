@@ -63,19 +63,23 @@ void tunnel_check_keepalive(void *a, void *user_ctx /*ignored*/) {
 	struct client *c;
 	struct tunnel *t,*p;
 
+/*
 	gettimeofday(&now, NULL);
 
 	if (verbose) printf("checking keepalive status...\n");
 
 	list_for_each_entry(c, &s->clients, list) {
+printf("client %d\n", c->cfd);
 		list_for_each_entry_safe(t, p, &c->tunnels, list) {
+			if (t->state == TUN_STATE_WAIT_CREATE)
+				continue;
 			timersub(&now, &t->last_ka, &res);
-			printf("now %d\n", now.tv_sec);
-			printf("last ta %d\n", t->last_ka.tv_sec);
-			printf("res sec %d\n", res.tv_sec);
 			if (res.tv_sec > TUNNEL_MAX_IDLE_TIME)  {
 				if (verbose) printf("tunnel %d expired\n", t->tid);
 				tunnel_close(s, t);
+			}
+			else {
+				if (verbose) printf("tunnel %d ok\n", t->tid);
 			}
 		}
 	}
@@ -87,4 +91,5 @@ void tunnel_check_keepalive(void *a, void *user_ctx /*ignored*/) {
 	}
 	
 	if (verbose) printf("done\n");
+*/
 }

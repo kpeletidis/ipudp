@@ -156,7 +156,11 @@ printf("returned tid %d\n", tun.tid);
 			rule.type = MODE_MULTI_V4;
 			rule.tun_id = t->tid;
             rule.dest = c->v_addr;
-			
+#ifdef DBG
+char tmp[32];
+
+printf("inserting rule for tunnel %d dest %s viface %s\n", rule.tun_id, inet_ntop(AF_INET, &rule.dest, tmp, 32), viface.name);
+#endif
 			ret = do_cmd_add_rule(&viface, &rule, sizeof(rule));
 
 			break;

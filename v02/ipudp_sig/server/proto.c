@@ -50,7 +50,7 @@ send_resp(char *msg, struct client *c, struct sockaddr_in *from, int sock, int s
 
 static void
 handle_request_tunnel(char *buf, struct client *c, struct server_data *s) {
-	struct tunnel *tun = (struct tunnel *)malloc(sizeof(*tun));
+	struct tunnel *tun; 
 	char resp[64]= { 0 };
 	char *ret_code = RET_OK;
 	char *reason;
@@ -58,15 +58,16 @@ handle_request_tunnel(char *buf, struct client *c, struct server_data *s) {
 	char arg[blen];
 	char *p;
 
-
 	if (verbose) printf("handling request_tunnel\n");
+
+	tun = (struct tunnel *)malloc(sizeof(struct tunnel));
 	if (!tun) {
 		ret_code = RET_ERR;
 		reason = "memory error";
 		goto send_resp;
 	}
-	memset(tun,0,sizeof(*tun));
-	
+
+	memset(tun,0,sizeof(struct tunnel));	
 	//first arg - cmd
 	memset(arg,0,blen);
 	if (__get_next_arg(buf, &p, arg, blen) < 0) {
@@ -74,11 +75,9 @@ handle_request_tunnel(char *buf, struct client *c, struct server_data *s) {
 		reason = "bad format";
 		goto send_resp;
 	}
-
 	//second arg - token
-	tunnel_set_token(tun->token_server);
-	
-	//memset(tun->token_client, 0, 2*TOKEN_LEN+1);
+	tunnel_set_token(tun->token_server);	
+	memset(tun->token_client, 0, 2*TOKEN_LEN+1);
 	memcpy(tun->token_client, p, 2*TOKEN_LEN);
 
 send_resp:
@@ -96,11 +95,13 @@ send_resp:
 		if (tun) 
 			free(tun);
 	}
-	
+
 	if (add) {
 		tun->state = TUN_STATE_WAIT_CREATE;
+		if (verbose) printf("tun request for client %d\n", c->cfd);
 		list_add(&tun->list, &c->tunnels);
 	}
+
 	return;
 }
 
@@ -142,9 +143,9 @@ handle_create_tunnel(char *buf, struct server_data *s, struct sockaddr_in *from)
 					break;
 				}
 			}
+		}
 		if (found)
 			break;
-		}
 	}
 		
 	if (!found){
@@ -168,7 +169,7 @@ handle_create_tunnel(char *buf, struct server_data *s, struct sockaddr_in *from)
 	}
 
 	gettimeofday(&now, NULL);
-	t->last_ka = now;
+	memcpy(&t->last_ka, &now, sizeof(now));
 
 	sprintf(resp, "%s:%02d:%s\n", ret_code, seq, t->token_client);
 	if (send_resp(resp, NULL, from, s->tunfd, seq) < 0) {
@@ -178,6 +179,7 @@ handle_create_tunnel(char *buf, struct server_data *s, struct sockaddr_in *from)
 
 	t->state = TUN_STATE_ESTABLISHED;
 
+printf("\ntunnel %d inserted\n", t->tid);
 	return;
 
 send_err:
@@ -240,12 +242,13 @@ handle_keep_alive(char *buf, int len, struct server_data *s, struct sockaddr_in 
 		goto send_err;
 	}
 
+
 	sprintf(resp+4, "%s:%u\n", ret_code, seq);
 	sendto(s->tunfd, resp, strlen(resp+4)+4, 0,
             (struct sockaddr *)&t->addr, sizeof(struct sockaddr_in));
 	
 	gettimeofday(&now, NULL);
-	t->last_ka = now;
+	memcpy(&t->last_ka, &now, sizeof(now));
 
 	return;
 send_err:
@@ -291,6 +294,7 @@ handle_get_vaddr(char *buf, struct client *c, struct server_data *s) {
 	
 	list_add_tail(&new->list, pos);
 
+	c->v_addr = htonl(ret_addr);
 #if 0
 #ifdef DBG
 	char tmp[32];
