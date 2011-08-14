@@ -203,7 +203,6 @@ main(int argc, char **argv){
 				}
 				//parse rule parameters
 				if (viface_mode == MODE_MULTI_V4) {
-
 						ipudp_rule_multi_v4 rule;
 						u32 daddr_bin;
 						

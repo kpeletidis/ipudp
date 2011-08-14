@@ -139,11 +139,14 @@ create_nl_socket(const int groups){
 	local.nl_groups = groups;
 	local.nl_pid 	= getpid();
 
+#if 0
 	if (bind(fd, (struct sockaddr *) &local, sizeof(local)) < 0){
 		close(fd);
 		perror("unable to bind netlink socket");
 		return -1;
 	}
+#endif
+
 	nl_sd = fd;
 	return 0;
 }
