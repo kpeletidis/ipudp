@@ -74,9 +74,9 @@ int tunnel_add(struct tunnel *tun){
 }
 
 void tunnel_keep_alive(struct timeval *to) {
-	struct tunnel *t;
+	struct tunnel *t, *tt;
 
-	list_for_each_entry(t, &c_data.tunnels, list) {
+	list_for_each_entry_safe(t, tt, &c_data.tunnels, list) {
 		if (do_keepalive(t) < 0) {
 			print_log("keepalive failed. closing tunnel...\n");
 			tunnel_close(t);
