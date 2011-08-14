@@ -23,6 +23,10 @@ load_dh_params(SSL_CTX *ctx,const char *file) {
 	return 1;
 }
 
+int verify_cb(int preverify_ok, X509_STORE_CTX *x509_ctx) {
+	/* put here something if needed */
+    return preverify_ok;
+}
 
 SSL * 
 ssl_ctx_init(void) {
@@ -49,10 +53,14 @@ ssl_ctx_init(void) {
 		print_log("SSL_CTX_load_verify_loc error\n");
 		return NULL;
 	}
+
+    if (!SSL_CTX_check_private_key(ssl_ctx)) {
+        printf("Private key does not match the certificate public key\n");
+        return NULL;
+    }
 	
 	SSL_CTX_set_verify_depth (ssl_ctx, 3);
-
-	SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_PEER, NULL);
+	SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_PEER, verify_cb);
 
 	if (!(load_dh_params(ssl_ctx, DHFILE))) {
 		print_log("Set DH params error\n");
