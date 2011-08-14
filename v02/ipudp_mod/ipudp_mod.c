@@ -33,6 +33,18 @@ struct list_head __inline * ipudp_get_viface_list(void) {
 	return ipudp->viface_list;
 }
 
+
+static int __name_in_use(char *name) {
+	ipudp_dev *p;
+
+	list_for_each_entry_rcu(p, ipudp->viface_list, list) {
+		if (!strcmp(name, p->dev->name))
+			return 1;
+	}
+
+	return 0;
+}
+
 struct pcpu_tstats {
 	unsigned long rx_packets;
 	unsigned long rx_bytes;
@@ -575,9 +587,11 @@ new_dev_not_allowed(void) {
 
 static void 
 ipudp_clean_priv(ipudp_dev_priv * p) {
+if (!p) printk("warning ipudp_dev_priv null\n");
 	if (p->params.mode == MODE_MULTI_V4) {
 		ipudp_list_rules_flush(p);
 		if (p->fw_rules) kfree(p->fw_rules);
+		if (!p->fw_rules) printk("warning device %s fw_rules null\n", p->params.name);
 	}
 
 	ipudp_list_tun_flush(p);
@@ -1270,14 +1284,17 @@ ipudp_add_viface(ipudp_viface_params * p) {
 		goto err_dev_alloc;
 	}
 
-	//TODO copy viface_params
-
 	if (!strlen(p->name))
 		dev = alloc_netdev(sizeof(*ipudp_priv),"ipudp%d",
 					ipudp_tunnel_setup);
-	else	
+	else {
+		if (__name_in_use(p->name)){
+			err = IPUDP_ERR_DEV_ALLOC;
+			goto err_dev_alloc;
+		}
 		dev = alloc_netdev(sizeof(*ipudp_priv),p->name,
 					ipudp_tunnel_setup);
+	}
 
 	if (!dev) {
 		err = IPUDP_ERR_DEV_ALLOC;
@@ -1316,7 +1333,8 @@ ipudp_add_viface(ipudp_viface_params * p) {
 	dev->tstats = alloc_percpu(struct pcpu_tstats);
 	if (!dev->tstats) {
 		err = IPUDP_ERR_DEV_ALLOC;
-		goto err_reg_dev;
+
+		goto err_alloc_tsats;
 	}
 	//register net device
 	if (register_netdev(dev)) {
@@ -1331,6 +1349,7 @@ ipudp_add_viface(ipudp_viface_params * p) {
 
 err_reg_dev:
 	free_netdev(dev);
+err_alloc_tsats:
 err_init_priv:
 	ipudp_clean_priv(ipudp_priv);
 err_alloc_name:
