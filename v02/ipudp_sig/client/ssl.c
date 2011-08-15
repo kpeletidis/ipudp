@@ -38,7 +38,6 @@ ssl_ctx_init(void) {
 		print_log("SSL_CTX_set_cipher_list error\n");
 		return NULL;
 	}
-
     if(!(SSL_CTX_use_certificate_chain_file(ssl_ctx, CERTFILE))) {
 		print_log("SSL_CTX_use_cert_chain error\n");
 		return NULL;
@@ -46,6 +45,11 @@ ssl_ctx_init(void) {
 	if(!(SSL_CTX_use_PrivateKey_file(ssl_ctx, KEYFILE,
 					SSL_FILETYPE_PEM))) {
 		print_log("SSL_CTX_use_privatekey error\n");
+		return NULL;
+	}
+    
+	if (!SSL_CTX_check_private_key(ssl_ctx)) {
+		printf("Private key does not match the certificate public key\n");
 		return NULL;
 	}
 

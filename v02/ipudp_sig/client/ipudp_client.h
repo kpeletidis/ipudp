@@ -33,6 +33,7 @@
 #define MAX_LINE_LEN 256
 
 #define DEFAULT_KEEPALIVE_TIMEOUT 10
+#define DEFAULT_VIFACE_NAME "ipudp0"
 
 #define VIFACE_STR_LEN 12 
 #define TOKEN_LEN 8
@@ -71,10 +72,10 @@ struct client_data {
 	struct sockaddr_in udp_server;
 	int tcpfd;
 	__u32 vaddr;
-	char viface[VIFACE_STR_LEN + 1];
-	
+	char viface[VIFACE_STR_LEN + 1];	
 	struct list_head tunnels;
-	int console;
+	char *dev;
+	char *viface_name;
 };
 
 int clientshutdown;
@@ -85,7 +86,7 @@ SSL_CTX *ssl_ctx;
 
 /*utils.c*/
 void print_log(char *);
-void test_send(void);
+void demonize(void);
 
 /*ssl.c*/
 int ssl_init(void);
@@ -100,6 +101,8 @@ int sock_init_connect(void);
 int client_init(void);
 void client_fini(void);
 void client_shutdown(void);
+int client_association(char *, char *);
+int client_keeplive_cycle(int, int);
 
 /*console.c*/
 int console_ini(void);
@@ -120,5 +123,5 @@ struct tunnel* tunnel_init(char *);
 void tunnel_close(struct tunnel *);
 void tunnel_close_all(void);
 int tunnel_add(struct tunnel *);
-void tunnel_keep_alive(struct timeval *);
+void tunnel_keep_alive(struct timeval *, int);
 #endif

@@ -1,3 +1,4 @@
+#include <sys/stat.h>
 #include "ipudp_client.h"
 
 void 
@@ -8,13 +9,48 @@ print_log(char *p) {
 		;
 }
 
-/*
-void 
-test_send() {
-	unsigned char *buf="ciao\n";
-	ssl_write_n(ssl, buf, 5);
-	sleep(5);	
-	sendto(c_data.udpfd, (void *)buf, 5, 0,(struct sockaddr *)&c_data.udp_server, sizeof(struct sockaddr_in));
-	sleep(5);	
-	return;
-}*/
+int 
+daemonize(void)
+{
+	pid_t pid, sid;
+
+	if ( getppid() == 1 ) return 0;
+	
+	pid = fork();
+	if (pid < 0) {
+		return(-1);
+	}
+
+	if (pid > 0) {
+		exit(0);
+	}
+
+	umask(0);
+
+	sid = setsid();
+	if (sid < 0) {
+		return(-1);
+	}
+
+	if ((chdir("/")) < 0) {
+		return(-1);
+	}
+
+	if (!(freopen( "/dev/null", "r", stdin))) {
+		printf("Couldn't redirect stdin\n");
+		return(-1);
+	}
+	
+	if (!(freopen( "/dev/null", "w", stdout))) {
+		printf("Couldn't redirect stdout\n");
+		return(-1);
+	}
+	
+	if (!(freopen( "/dev/null", "w", stderr))) {
+		printf("Couldn't redirect stderr\n");
+		return(-1);
+	}
+
+	return 0;
+}
+

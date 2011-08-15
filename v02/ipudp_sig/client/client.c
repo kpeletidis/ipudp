@@ -29,6 +29,48 @@ client_init(void) {
 	return 0;
 }
 
+int
+client_association(char *dev, char *viface) {
+	if (do_getvaddr(viface) < 0) {
+		printf("error: virtual address request failed\n");
+		return -1;
+	}
+	if (do_reqtun(dev) < 0) {
+		printf("error: tunnel establishment failed\n");
+		return -1;
+	}
+	c_data.viface_name = viface;
+	c_data.dev = dev;
+	return 0;
+}
+
+void 
+client_keepalive_cycle(int persistent, int to) {
+	int try = 0;
+	//XXX when multiple tunnel suppost will be added change this
+	struct tunnel *tun = (struct tunnel *)&c_data.tunnels.next;
+
+	while(!clientshutdown) {	
+		if (do_keepalive(tun) < 0) {
+retry:
+			if (persistent) {
+				if (try > 2) {
+					print_log("keepalive failed. couldn't reconnect to server\n");
+					break;
+				}
+				try++;
+				if (client_association(c_data.dev, c_data.viface) < 0)
+					goto retry;
+			}
+			else 
+				break;
+		}
+		sleep(to);
+	}
+	print_log("connection to server lost. closing down...\n");
+	tunnel_close(tun);
+}
+
 void
 client_shutdown(void) {
 	clientshutdown = 1;

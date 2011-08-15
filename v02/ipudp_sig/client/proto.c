@@ -5,7 +5,7 @@
 #define CMD_REQUEST_TUNNEL "0002" // SSL - req: "0002:token_client" --> resp: "ret_code:token_server"
 #define CMD_CREATE_TUNNEL "0003" // UDP - req: "0003:seq:token_server" --> resp: "ret_code:seq:token_client"
 #define CMD_SHUTDOWN "0020"	// SSL - 
-//a keepalive starts with an escape sequence 0xffffffff
+//keepalive starts with escape sequence 0xffffffff
 
 #define RET_OK "00"
 #define RET_ERR "11"
@@ -71,7 +71,7 @@ static int __is_retcode_ok(char *buf, char **p) {
 	return ret;
 }
 
-//p = address of the next ":"
+//return p = address of the next ":"
 int  __get_next_arg(char *buf, char **p, char *arg, int max_len) {
 	int i = 0;
 	char *pos = buf;
@@ -299,7 +299,7 @@ recv_again:
 			goto bad_format;
 		if ((ret_seq != seq)){ //silently discard and receive again
 			goto recv_again;
-}
+	}
 		print_log("do_keepalive: ok\n");
 	}
 	else if(p) {

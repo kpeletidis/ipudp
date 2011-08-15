@@ -4,10 +4,25 @@
 
 struct client_data c_data;
 
-
-void usage(void) { printf("Usage: client -p <port> -a <server address>" 
-		"[-u <udp_port>] [-c (console)] [-v (verbose)]\n"); }
-
+void usage(void) { 
+		printf("\nUsage: client -p <port> -a <server address> [-u <tunnel_port>] [-c (console)]" 
+		"[-i <dev>] [-n <viface_name>] [-k <sec>] [-b (background)] [-P (persistent)] [-v (verbose)]\n"
+		"-p <port>: TCP server port\n"
+		"-a <address>: server IP address\n"
+		"-u <tunnel_port>: UDP server tunneling port - optional. Default: %d\n"
+		"-c: starts interactive console mode. Press TAB for command list\n"
+		"-i <dev>: set the local outgoning tunnel interface. Ignored in console mode. Mandatory optherwise\n"
+		"-n <viface_name>: set the virtual interface name. Ignored in console mode. Default: %s\n"
+		"-k <sec>: set keepalive time in seconds\n"
+		"-b: demonize the program\n"
+		"-P: set persistent mode. If  \"tunnel connectivity\" is lost, a new tunnel is automatically established\n"
+		"-v: set verbose mode - debug\n\n"
+		"es: 1) interactive console mode: client -p 9000 -a 10.0.0.1 -c\n"
+		"    2) background mode: client -p 9000 -a 10.0.0.1 -i eth0 -n ipudp0 -b\n"
+		"\n",
+		DEFAULT_UDP_PORT, DEFAULT_VIFACE_NAME); 
+	exit(-1);
+}
 
 static void 
 sighand(int s)
@@ -15,14 +30,13 @@ sighand(int s)
 	client_shutdown();
 }
 
-
 static int 
-do_select(int cfd) {
+do_select(int cfd, int to_sec) {
 	fd_set fds[1];
 	int maxfd;
 	struct timeval timeout;
 	
-	timeout.tv_sec = DEFAULT_KEEPALIVE_TIMEOUT;
+	timeout.tv_sec = to_sec;
 	timeout.tv_usec = 0;
 
 	maxfd = cfd;
@@ -43,20 +57,20 @@ do_select(int cfd) {
                 if (FD_ISSET(cfd, fds))
                  	console_read_char();
 				else
-					tunnel_keep_alive(&timeout);
+					tunnel_keep_alive(&timeout, to_sec);
 	}
 	return 0;
 }
 
 
 int main(int argc, char **argv) {
-	int c = 0;
+	int c = 0, background = 0;
 	int console = 0;
-	int port = 0, uport = 0;
-	char *addrstr = NULL;
+	int port = 0, uport = 0, ka_time = 0, persistent = 0;
+	char *addrstr = NULL, *viface = NULL, *dev = NULL;
 	verbose = 0;
 
-	while((c = getopt(argc, argv, "u:p:a:cv"))!= -1) {
+	while((c = getopt(argc, argv, "u:p:a:n:k:bcviP"))!= -1) {
 		switch (c) {
 		case 'u':
 			uport = atoi(optarg);
@@ -73,17 +87,42 @@ int main(int argc, char **argv) {
 		case 'a':
 			addrstr = optarg;
 			break;
+		case 'i':
+			dev = optarg;
+			break;
+		case 'n':
+			viface = optarg;
+			break;
+		case 'k':
+			ka_time = atoi(optarg);
+			break;
+		case 'b':
+			background = 1;
+			break;
+		case 'P':
+			persistent = 1;
+			break;
 		default:
 			usage();
-			exit(-1);				}
+			exit(-1);
+		}
 	}
 	if (!(port) || !(addrstr)) {
+		printf("Error: both -a <address> and -p <port> must be specified\n");
 		usage();
-		exit(-1);
 	}
+
 	if (!uport)
 		uport = DEFAULT_UDP_PORT;
 	
+	if (!ka_time)
+		ka_time = DEFAULT_KEEPALIVE_TIMEOUT;	
+
+	if ((!console) && (!dev)) {
+		printf("Error: either -c or -d <dev> must be specified. If console mode is not used," 
+				"the name of the outgoing tunnel interface must be specified\n");
+		usage();
+	}
 
 	/*Initialization*/
 	memset(&c_data, 0, sizeof(struct client_data));
@@ -118,11 +157,11 @@ int main(int argc, char **argv) {
 		goto quit;
 	
 	if (console) {
-		if (console_ini() < 0)
+		if (console_ini() < 0) {
+			console = 0;
 			goto quit;
-		c_data.console = 1;
+		}
 	}
-
 	/**/
 
 	signal(SIGINT, sighand);
@@ -130,13 +169,27 @@ int main(int argc, char **argv) {
     signal(SIGKILL, sighand);
 
 	if (console)
-		do_select(0);
-	else 
-		;//test_send();
+		do_select(0, ka_time);
+	else {
+		/*
+		if (client_association(viface, dev) < 0 ) 
+			goto quit;
+		*/
+		/*
+		if (background) {
+			if (demonize() < 0) {
+				printf("Error: couldn't demonize. Exit\n");
+				goto quit;
+			}
+		}*/
+		/*
+		client_keepalive_cycle(persistent, ka_time);
+		*/
+	}
 
 quit:
     client_fini();
-	if (c_data.console)
+	if (console)
 		console_fini();
 
 	return 0;

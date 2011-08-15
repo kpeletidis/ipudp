@@ -73,7 +73,7 @@ int tunnel_add(struct tunnel *tun){
 	return ipudp_conf_cmd(IPUDP_CONF_ADD_TUN, (void*)tun);
 }
 
-void tunnel_keep_alive(struct timeval *to) {
+void tunnel_keep_alive(struct timeval *to, int next_to) {
 	struct tunnel *t, *tt;
 
 	list_for_each_entry_safe(t, tt, &c_data.tunnels, list) {
@@ -82,7 +82,7 @@ void tunnel_keep_alive(struct timeval *to) {
 			tunnel_close(t);
 		}
 	}
-	to->tv_sec = DEFAULT_KEEPALIVE_TIMEOUT;
+	to->tv_sec = next_to;
 	to->tv_usec = 0;
 }
 
