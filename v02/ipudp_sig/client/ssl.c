@@ -7,7 +7,7 @@ load_dh_params(SSL_CTX *ctx,const char *file) {
    	BIO *bio;
 
     	if ((bio=BIO_new_file(file,"r")) == NULL) {
-      		print_log("Couldn't open DH file");
+      		print_log("error: couldn't open DH file", LOG_LEVEL_IMPORTANT);
 		return 0;
 	}
     	
@@ -16,7 +16,7 @@ load_dh_params(SSL_CTX *ctx,const char *file) {
 	BIO_free(bio);
     	
 	if(SSL_CTX_set_tmp_dh(ctx,ret)<0) {
-      		print_log("Couldn't set DH parameters");
+      		print_log("error: couldn't set DH parameters", LOG_LEVEL_IMPORTANT);
 		return 0;
 	}
 
@@ -35,31 +35,31 @@ ssl_ctx_init(void) {
 	ssl_ctx = SSL_CTX_new(TLSv1_client_method());
 
 	if (!SSL_CTX_set_cipher_list(ssl_ctx,CIPHER_LIST)) {
-		print_log("SSL_CTX_set_cipher_list error\n");
+		print_log("error: SSL_CTX_set_cipher_list error", LOG_LEVEL_IMPORTANT);
 		return NULL;
 	}
     if(!(SSL_CTX_use_certificate_chain_file(ssl_ctx, CERTFILE))) {
-		print_log("SSL_CTX_use_cert_chain error\n");
+		print_log("error: SSL_CTX_use_cert_chain error", LOG_LEVEL_IMPORTANT);
 		return NULL;
 	}
 	if(!(SSL_CTX_use_PrivateKey_file(ssl_ctx, KEYFILE,
 					SSL_FILETYPE_PEM))) {
-		print_log("SSL_CTX_use_privatekey error\n");
+		print_log("error: SSL_CTX_use_privatekey error", LOG_LEVEL_IMPORTANT);
 		return NULL;
 	}
     
 	if (!SSL_CTX_check_private_key(ssl_ctx)) {
-		printf("Private key does not match the certificate public key\n");
+		print_log("error: private key does not match the certificate public key", LOG_LEVEL_IMPORTANT);
 		return NULL;
 	}
 
 	if(!(SSL_CTX_load_verify_locations(ssl_ctx, 0, CAPATH))) {
-		print_log("SSL_CTX_load_verify_loc error\n");
+		print_log("error: SSL_CTX_load_verify_loc error", LOG_LEVEL_IMPORTANT);
 		return NULL;
 	}
 
     if (!SSL_CTX_check_private_key(ssl_ctx)) {
-        printf("Private key does not match the certificate public key\n");
+        print_log("error: private key does not match the certificate public key", LOG_LEVEL_IMPORTANT);
         return NULL;
     }
 	
@@ -67,11 +67,11 @@ ssl_ctx_init(void) {
 	SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_PEER, verify_cb);
 
 	if (!(load_dh_params(ssl_ctx, DHFILE))) {
-		print_log("Set DH params error\n");
+		print_log("error: couldn't load DH params", LOG_LEVEL_IMPORTANT);
 		return NULL;
 	}
 	
-	print_log("SSL context successfully initialized\n");
+	print_log("SSL context successfully initialized", LOG_LEVEL_NOTIFICATION);
 		
 	ssl = SSL_new(ssl_ctx);
 
@@ -88,28 +88,21 @@ ssl_ctx_init(void) {
 int ssl_init(void) {
 	char tmp_buf[1000];
 
-	
 	SSL_load_error_strings();
 	SSL_library_init();
 	RAND_seed((void *) tmp_buf, 1000);
 	
-	
 //	bio_err=BIO_new_fp(stderr,BIO_NOCLOSE);
 	
-
-	print_log("ssl_init complete\n");
-
 	if (!ssl_ctx_init()) 
 		return -1;
 
-
 	if (SSL_connect(ssl) != 1) {
-		print_log("SSL_connect error\n");
+		print_log("error: SSL_connect failed", LOG_LEVEL_IMPORTANT);
 		return -1;
   	}
 
-	print_log("SSL handshake complete\n");
-
+	print_log("SSL handshake complete", LOG_LEVEL_NOTIFICATION);
 
 	return 0;
 }
@@ -161,12 +154,13 @@ ssl_write_n(SSL * ssl, unsigned char *buf, int len) {
 	int r;
 
 	if ((r = SSL_write(ssl, buf, len)) <= 0) {
-		print_log("write error\n");
+		print_log("ssl_write_n: write error", LOG_LEVEL_NOTIFICATION);
 	}
 
 #ifdef DBG
 	printf("ssl_write_n: %d bytes sent\nbuf: %s", r, buf);	
 #endif
+
 	return r;
 }
 
@@ -207,14 +201,14 @@ ssl_check_error(SSL * ssl, int ret) {
 		return 0;
 
 	case SSL_ERROR_ZERO_RETURN:	
-		print_log("SSL session shutdown\n");
+		print_log("SSL session shutdown", LOG_LEVEL_NOTIFICATION);	
 		return -1;
 
 	case SSL_ERROR_SYSCALL:
-		print_log("SSL Error: Premature close\n");
+		print_log("SSL Error: Premature close", LOG_LEVEL_NOTIFICATION);
 		return -1;
 	default:
-		print_log("SSL read problem\n");
+		print_log("SSL read problem", LOG_LEVEL_NOTIFICATION);
 		return -1;
 	}
 
@@ -233,11 +227,11 @@ _again:
 				break;
 			case 0:
 				if (err)	
-					print_log("warning: SSL_shutdown failed\n");
+					print_log("SSL_shutdown failed\n", LOG_LEVEL_NOTIFICATION);
 				err = 1;
 				goto _again;
 			default:		
-				print_log("warning: SSL_shutdown failed\n");
+				print_log("SSL_shutdown failed", LOG_LEVEL_NOTIFICATION);
 		}
 
 		SSL_free(ssl);

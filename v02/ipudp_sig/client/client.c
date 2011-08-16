@@ -4,16 +4,16 @@ int
 sock_init_connect(void) {
 	int sock;
 
-	print_log("Connecting to server...\a");
+	print_log("connecting to server...", LOG_LEVEL_NOTIFICATION);
   	sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 
 	if ( connect(sock, (const struct sockaddr *)&c_data.tcp_server, sizeof(c_data.tcp_server)) < 0 ) { 
-      		print_log("ERROR couldn't connect to server\n");
+      		print_log("error: couldn't connect to server", LOG_LEVEL_IMPORTANT);
 		close(sock);
 		return -1;
 	}	
 
-	print_log("connection established\n");
+	print_log("connection established", LOG_LEVEL_NOTIFICATION);
 	
 	c_data.tcpfd = sock;
 
@@ -32,11 +32,11 @@ client_init(void) {
 int
 client_association(char *dev, char *viface) {
 	if (do_getvaddr(viface) < 0) {
-		printf("error: virtual address request failed\n");
+		print_log("error: virtual address request failed", LOG_LEVEL_IMPORTANT);
 		return -1;
 	}
 	if (do_reqtun(dev) < 0) {
-		printf("error: tunnel establishment failed\n");
+		print_log("error: tunnel establishment failed", LOG_LEVEL_IMPORTANT);
 		return -1;
 	}
 	c_data.viface_name = viface;
@@ -48,14 +48,20 @@ void
 client_keepalive_cycle(int persistent, int to) {
 	int try = 0;
 	//XXX when multiple tunnel suppost will be added change this
-	struct tunnel *tun = (struct tunnel *)&c_data.tunnels.next;
+	struct tunnel * tun = (struct tunnel *)c_data.tunnels.next;
+
+	if ((struct list_head *)tun == &c_data.tunnels) {
+		print_log("something went wrong... tunnel list empy. exit.", LOG_LEVEL_IMPORTANT);
+		return;
+	}
 
 	while(!clientshutdown) {	
-		if (do_keepalive(tun) < 0) {
+		if (do_keepalive(tun) < 0) {	
+					print_log("keepalive failed", LOG_LEVEL_IMPORTANT);
 retry:
 			if (persistent) {
 				if (try > 2) {
-					print_log("keepalive failed. couldn't reconnect to server\n");
+					print_log("couldn't reconnect to server. shutting down..", LOG_LEVEL_IMPORTANT);
 					break;
 				}
 				try++;
@@ -67,8 +73,6 @@ retry:
 		}
 		sleep(to);
 	}
-	print_log("connection to server lost. closing down...\n");
-	tunnel_close(tun);
 }
 
 void
@@ -88,6 +92,6 @@ client_fini() {
 	ssl_fini();
 	sock_fin();
 	ipudp_conf_fini();
-	print_log("client shut down\nciaociao\n");
+	print_log("client shut down", LOG_LEVEL_NOTIFICATION);
 }
 

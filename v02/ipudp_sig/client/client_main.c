@@ -3,10 +3,14 @@
 #include <appconsole.h>
 
 struct client_data c_data;
+int background = 0;
+int verbose = 0;
+int clientshutdown = 0;
+FILE *log_file = NULL;
 
 void usage(void) { 
 		printf("\nUsage: client -p <port> -a <server address> [-u <tunnel_port>] [-c (console)]" 
-		"[-i <dev>] [-n <viface_name>] [-k <sec>] [-b (background)] [-P (persistent)] [-v (verbose)]\n"
+		" [-i <dev>] [-n <viface_name>] [-k <sec>] [-b (background)] [-P (persistent)] [-v (verbose)]\n"
 		"-p <port>: TCP server port\n"
 		"-a <address>: server IP address\n"
 		"-u <tunnel_port>: UDP server tunneling port - optional. Default: %d\n"
@@ -51,7 +55,7 @@ do_select(int cfd, int to_sec) {
                         if (errno == EINTR) {
                                 continue;
                         }
-                        print_log("do_select: select error\n");
+                        print_log("do_select: select error", LOG_LEVEL_IMPORTANT);
                         return (-1);
                 }
                 if (FD_ISSET(cfd, fds))
@@ -64,13 +68,12 @@ do_select(int cfd, int to_sec) {
 
 
 int main(int argc, char **argv) {
-	int c = 0, background = 0;
+	int c = 0;	
 	int console = 0;
 	int port = 0, uport = 0, ka_time = 0, persistent = 0;
 	char *addrstr = NULL, *viface = NULL, *dev = NULL;
-	verbose = 0;
 
-	while((c = getopt(argc, argv, "u:p:a:n:k:bcviP"))!= -1) {
+	while((c = getopt(argc, argv, "u:p:a:n:k:i:bcvP"))!= -1) {
 		switch (c) {
 		case 'u':
 			uport = atoi(optarg);
@@ -118,20 +121,30 @@ int main(int argc, char **argv) {
 	if (!ka_time)
 		ka_time = DEFAULT_KEEPALIVE_TIMEOUT;	
 
+	if (!viface)
+		viface = DEFAULT_VIFACE_NAME;
+
 	if ((!console) && (!dev)) {
-		printf("Error: either -c or -d <dev> must be specified. If console mode is not used," 
+		printf("Error: either -c or -i <dev> must be specified. If console mode is not used," 
 				"the name of the outgoing tunnel interface must be specified\n");
 		usage();
 	}
 
 	/*Initialization*/
+	if (background) {
+		if (log_init() < 0) {
+			printf("error: log_init failed\n");
+			exit(-1);
+		}
+	}
+
 	memset(&c_data, 0, sizeof(struct client_data));
 
 	/*TCP server addr*/
   	c_data.tcp_server.sin_family = AF_INET;
   	c_data.tcp_server.sin_port = htons(port);
   	if (inet_pton(AF_INET, addrstr, &c_data.tcp_server.sin_addr)<0) {
-		print_log("bad server ip address\n");
+		printf("bad server ip address");
 		exit(-1);
 	}
 
@@ -141,12 +154,12 @@ int main(int argc, char **argv) {
   	inet_pton(AF_INET, addrstr, &c_data.udp_server.sin_addr);
 
 	if (client_init() < 0) {
-		print_log("client_init() error\n");
+		print_log("client_init() error", LOG_LEVEL_IMPORTANT);
 		goto quit;
 	}
 
 	if (ipudp_conf_init() < 0) {
-		print_log("ipudp_conf_init() error\n");
+		print_log("ipudp_conf_init() error", LOG_LEVEL_IMPORTANT);
 		goto quit;
 	}
 
@@ -171,20 +184,15 @@ int main(int argc, char **argv) {
 	if (console)
 		do_select(0, ka_time);
 	else {
-		/*
-		if (client_association(viface, dev) < 0 ) 
+		if (client_association(dev, viface) < 0 ) 
 			goto quit;
-		*/
-		/*
 		if (background) {
-			if (demonize() < 0) {
+			if (daemonize() < 0) {
 				printf("Error: couldn't demonize. Exit\n");
 				goto quit;
 			}
-		}*/
-		/*
+		}
 		client_keepalive_cycle(persistent, ka_time);
-		*/
 	}
 
 quit:

@@ -17,16 +17,14 @@ int __is_ipudp_mod_loaded() {
 int 
 ipudp_conf_init(void) {
 
-	print_log("Checking for ipudp module...");
 	if (!__is_ipudp_mod_loaded()) {
-		print_log("not found!\n");
+		print_log("error: ipudp module not loaded", LOG_LEVEL_IMPORTANT);
 		memset(c_data.viface,0,VIFACE_STR_LEN);
 		return -1;
 	}
-	print_log("found!\n");
 
 	if (ipudp_genl_client_init() < 0) {
-        print_log("ipudp_genl_client_init error\n");
+        print_log("error: ipudp_genl_client_init failed", LOG_LEVEL_IMPORTANT);
         return -1;
     }
 
@@ -39,7 +37,7 @@ ipudp_conf_fini(void) {
 		return 0;
 	
 	if (ipudp_conf_cmd(IPUDP_CONF_DEL_VIFACE, NULL) < 0)
-		print_log("warning: couldn't remove viface\n");
+		return -1;
 
 	return 0;
 }
@@ -55,13 +53,12 @@ ipudp_conf_cmd(int cmd, void *args) {
 
 			inet_ntop(AF_INET, &c_data.vaddr, addr, 32);
 
-			print_log("Configuring viface address...");
 			sprintf(cmd_str, "ifconfig %s %s", c_data.viface, addr);
-			if (system(cmd_str) == 0) {
-				print_log("done!\n");
-			}
+			if (system(cmd_str) == 0) 
+				print_log("virtual interface IP address configured", LOG_LEVEL_IMPORTANT);
+			
 			else {
-				print_log("error!\n");
+				print_log("error: virtual interface IP address configuration error", LOG_LEVEL_IMPORTANT);
 				ret = -1;
 			}
 			break;
@@ -72,14 +69,13 @@ ipudp_conf_cmd(int cmd, void *args) {
 			ipudp_viface_params prms;	
 
 			memset(&prms, 0, sizeof(ipudp_viface_params));
-			if (verbose) printf("adding %s interface...", viface);
 			memcpy(prms.name, viface, MAX_IPUDP_DEV_NAME_LEN);
 			if (do_cmd_add_viface(&prms) == 0) {
-				if (verbose) printf("done!\n");
+				print_log("virtual interface added", LOG_LEVEL_NOTIFICATION);
 				strcat(c_data.viface, viface);
 			}
 			else {
-				if (verbose) printf("error!\n");
+				print_log("error: couldn't add virtual interface", LOG_LEVEL_IMPORTANT);
 				memset(c_data.viface, 0, VIFACE_STR_LEN);
 				ret = -1;
 			}
@@ -89,23 +85,20 @@ ipudp_conf_cmd(int cmd, void *args) {
 			ipudp_viface_params prms;	
 
 			memset(&prms, 0, sizeof(ipudp_viface_params));
-			if (verbose) printf("removing %s interface...", c_data.viface);
 			memcpy(prms.name, c_data.viface, MAX_IPUDP_DEV_NAME_LEN);
 			if (do_cmd_del_viface(&prms) == 0) {
-				if (verbose) printf("done!\n");
+				print_log("virtual interface removed", LOG_LEVEL_NOTIFICATION);
 			}
 			else {
-				if (verbose) printf("error!\n");
+				print_log("error: couldn't remove virtual interface", LOG_LEVEL_IMPORTANT);
 				ret = -1;
-			}
+		}
 			break;
 		}
 		case IPUDP_CONF_ADD_TUN: {
 			struct tunnel *t = (struct tunnel *)args;
 			ipudp_tun_params tun; 
 			ipudp_viface_params viface;
-
-			print_log("Adding tunnel...");
 
             memset(&tun, 0, sizeof(tun));
             memset(&viface, 0, sizeof(viface));
@@ -121,22 +114,21 @@ ipudp_conf_cmd(int cmd, void *args) {
 	char laddr[32] = { 0 };
 	char raddr[32] = { 0 };
 
-    printf("Installing tunnelì: src %s dst %s lport %d rport %d viface %s\n",
+    printf("Installing tunnel: src %s dst %s lport %d rport %d viface %s\n",
         inet_ntop(AF_INET, &t->local_addr.sin_addr, laddr, 32),
         inet_ntop(AF_INET, &t->server_addr.sin_addr, raddr, 32),
         ntohs(t->local_addr.sin_port), ntohs(t->server_addr.sin_port),c_data.viface);
 #endif
-            ret = do_cmd_add_tun(&viface, &tun);
-            t->tid = tun.tid;
 
-			if (ret == 0) {
-				print_log("done!\n");
+			if (do_cmd_add_tun(&viface, &tun) == 0) {
+				print_log("ipudp tunnel added", LOG_LEVEL_NOTIFICATION);
 			}
 			else {
-				print_log("error!\n");
+				print_log("couldn't add ipudp tunnel", LOG_LEVEL_IMPORTANT);
 				ret = -1;
 			}
 
+            t->tid = tun.tid;
 			break;
 		}
 
@@ -151,9 +143,15 @@ ipudp_conf_cmd(int cmd, void *args) {
 			memcpy(viface.name, c_data.viface, MAX_IPUDP_DEV_NAME_LEN);
 			tun.tid = t->tid;
 
-			ret = do_cmd_del_tun(&viface, &tun);
+			if (do_cmd_del_tun(&viface, &tun) == 0) {
+				print_log("ipudp tunnel removed", LOG_LEVEL_NOTIFICATION);
+			}
+			else {
+				print_log("couldn't add ipudp tunnel", LOG_LEVEL_IMPORTANT);
+				ret = -1;
+			}
 
-
+			break;
 		}
 
 		default:

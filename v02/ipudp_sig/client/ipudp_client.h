@@ -37,10 +37,16 @@
 
 #define VIFACE_STR_LEN 12 
 #define TOKEN_LEN 8
+#define LOG_FILE_PATH "./ipudp.log"
 
 typedef uint32_t __u32; 
 typedef uint16_t __u16; 
 typedef uint8_t __u8; 
+
+enum {
+	LOG_LEVEL_IMPORTANT = 0,
+	LOG_LEVEL_NOTIFICATION,
+};
 
 enum {
 		IPUDP_CONF_SET_VADDR = 1,
@@ -78,15 +84,18 @@ struct client_data {
 	char *viface_name;
 };
 
-int clientshutdown;
-int verbose;
+extern int clientshutdown;
+extern int verbose;
+extern int background;
+extern FILE *log_file;
 
 SSL *ssl;
 SSL_CTX *ssl_ctx;
 
 /*utils.c*/
-void print_log(char *);
-void demonize(void);
+void print_log(char *, int);
+int daemonize(void);
+int log_init(void);
 
 /*ssl.c*/
 int ssl_init(void);
@@ -102,7 +111,7 @@ int client_init(void);
 void client_fini(void);
 void client_shutdown(void);
 int client_association(char *, char *);
-int client_keeplive_cycle(int, int);
+void client_keepalive_cycle(int, int);
 
 /*console.c*/
 int console_ini(void);

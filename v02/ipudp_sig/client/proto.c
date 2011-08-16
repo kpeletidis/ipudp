@@ -37,7 +37,7 @@ timeout_recvfrom(int sock, void *data, int l, int to) {
 	i = select(sock + 1, &socks, NULL, NULL, &t);
 	switch(i) {
 		case 0:
-			print_log("udp recvfrom timeout expired\n");
+			print_log("udp recvfrom timeout expired", LOG_LEVEL_NOTIFICATION);
 			return -2;
 		case -1:
 			return -1;
@@ -116,13 +116,13 @@ do_reqtun(char *dev) {
 
 	/* init tunnel data */
 	if (!(tun = tunnel_init(dev))) {
-		print_log("do_reqtun: tunnel_init error\n");
+		print_log("do_reqtun: tunnel_init error", LOG_LEVEL_NOTIFICATION);
 		return -1;
 	}
 	sprintf(buf, "%s:%s\n", CMD_REQUEST_TUNNEL, tun->token_client);
 
 	if (send_req(buf, NULL) < 0){
-		print_log("do_reqtun: send_req error\n");
+		print_log("do_reqtun: send_req error", LOG_LEVEL_NOTIFICATION);
 		goto free_tun;
 	}
 	memset(buf, 0, 1024);
@@ -142,16 +142,16 @@ do_reqtun(char *dev) {
 	if (__is_retcode_ok(buf, &p)) {
 		memset(tun->token_server, 0, 2*TOKEN_LEN+1);
 		memcpy(tun->token_server, p, 2*TOKEN_LEN);
-		sprintf(tmp,"do_reqtun: starting tunnel establishment token: %s - %s\n",tun->token_server, p);
-		print_log(tmp);
+		sprintf(tmp,"do_reqtun: starting tunnel establishment token: %s - %s",tun->token_server, p);
+		print_log(tmp, LOG_LEVEL_NOTIFICATION);
 	}
 	else if(p) {
 		sprintf(tmp, "do_reqtun: tunnel request error. reason: %s\n", p);
-		print_log(tmp);
+		print_log(tmp, LOG_LEVEL_NOTIFICATION);
 		goto free_tun;
 	}
 	else {	
-		print_log("do_reqtun: tunnel request response error. Bad format\n");
+		print_log("do_reqtun: tunnel request response error. Bad format", LOG_LEVEL_NOTIFICATION);
 		goto free_tun;
 	}
 
@@ -168,7 +168,7 @@ send_again:
 #endif
 
 	if (send_req(req, tun) < 0){
-		print_log("do_reqtun: send_req error\n");
+		print_log("do_reqtun: send_req error", LOG_LEVEL_NOTIFICATION);
 		return -1;
 	}
 
@@ -176,7 +176,7 @@ send_again:
 	memset(buf, 0, 1024);
 	switch (l = timeout_recvfrom(tun->fd, buf, 1024, UDP_TIMEOUT)) {
 		case -1:
-			print_log("do_reqtun: recvfrom_error");
+			print_log("do_reqtun: recvfrom_error", LOG_LEVEL_NOTIFICATION);
 			goto free_tun;
 		case -2:
 			if (try > 3) 
@@ -213,21 +213,21 @@ send_again:
 			goto bad_format;
 		}
 
-		print_log("do_reqtun: tunnel succesfully registered at the server. local configuration..\n");
+		print_log("do_reqtun: tunnel succesfully registered at the server. local configuration..", LOG_LEVEL_NOTIFICATION);
 	}
 	else if(p) {
 		sprintf(tmp, "do_reqtun: tunnel create error. reason: %s\n", p);
-		print_log(tmp);
+		print_log(tmp, LOG_LEVEL_IMPORTANT);
 		goto free_tun;
 	}
 	else {
 bad_format:
-		print_log("do_reqtun: tunnel create response error. Bad format\n");
+		print_log("do_reqtun: tunnel create response error. Bad format", LOG_LEVEL_IMPORTANT);
 		goto free_tun;
 	}
 
 	if (tunnel_add(tun) < 0) {
-		print_log("do_reqtun: couldn't add tunnel to module\n");
+		print_log("do_reqtun: couldn't add tunnel to module", LOG_LEVEL_NOTIFICATION);
 		goto free_tun;
 	}
 	return 0;
@@ -272,7 +272,7 @@ send_again:
 #endif
 
 	if (send_keepalive(buf, tun, strlen(buf+4) + 4) < 0){
-		print_log("do_keepalive: send_req error\n");
+		print_log("do_keepalive: send_req error", LOG_LEVEL_NOTIFICATION);
 		goto ret_err;
 	}
 
@@ -281,7 +281,7 @@ recv_again:
 	memset(resp, 0, 256);
 	switch (l = timeout_recvfrom(tun->fd, resp, 256, UDP_TIMEOUT)) {
 		case -1:
-			print_log("do_keepalive: recvfrom_error");
+			print_log("do_keepalive: recvfrom_error", LOG_LEVEL_NOTIFICATION);
 			goto ret_err;
 		case -2:
 			if (try > 3) 
@@ -297,19 +297,21 @@ recv_again:
 		//get sequence number
 		if ((ret_seq = (__u32)atoi(p)) == 0) 
 			goto bad_format;
-		if ((ret_seq != seq)){ //silently discard and receive again
+		if ((ret_seq != seq)) { //silently discard and receive again
 			goto recv_again;
-	}
-		print_log("do_keepalive: ok\n");
+		}
+#ifdef DBG
+		print_log("do_keepalive: ok", LOG_LEVEL_NOTIFICATION);
+#endif
 	}
 	else if(p) {
-		sprintf(tmp, "do_keepalive: error, reason: %s\n", p);
-		print_log(tmp);
+		sprintf(tmp, "do_keepalive: error, reason: %s", p);
+		print_log(tmp, LOG_LEVEL_NOTIFICATION);
 		goto ret_err;
 	}
 	else {
 bad_format:
-		print_log("do_keepalive: keepalive response error. Bad format\n");
+		print_log("do_keepalive: keepalive response error. Bad format", LOG_LEVEL_NOTIFICATION);
 		goto ret_err;
 	}
 	return 0;
@@ -321,14 +323,14 @@ ret_err:
 
 int
 do_getvaddr(char *viface) {
-	char buf[256] = {0}, tmp[32] = {0};
+	char buf[256] = {0}, tmp[32] = {0}, log[256] = {0};
 	int l = 0;
 	char *p = NULL;
 
 	sprintf(buf, "%s\n", CMD_GET_VADDR);
 
 	if (send_req(buf, NULL) < 0){
-		print_log("do_getvaddr: send_req error\n");
+		print_log("do_getvaddr: send_req error", LOG_LEVEL_NOTIFICATION);
 		return -1;
 	}
 
@@ -347,15 +349,17 @@ do_getvaddr(char *viface) {
 
 	if (__is_retcode_ok(buf, &p)) {
 		c_data.vaddr = htonl((__u32)atoi(p));
-		if (verbose) printf("do_getvaddr: assigned vaddr: %s\n", 
+		sprintf(log, "do_getvaddr: assigned vaddr: %s", 
 						inet_ntop(AF_INET, &c_data.vaddr, tmp, 32));		
+		print_log(log, LOG_LEVEL_IMPORTANT);
 	}
 	else if (p){
-		if (verbose) printf("do_getvaddr: couldn't assign vaddr. Error reason: %s\n", p);	
+		sprintf(log, "do_getvaddr: couldn't assign vaddr. Error reason: %s", p);	
+		print_log(log, LOG_LEVEL_IMPORTANT);
 		return -1;
 	}
 	else {	
-		if (verbose) printf("do_getvaddr: couldn't assign vaddr. Bad format\n");
+		print_log("do_getvaddr: couldn't assign vaddr. Bad format", LOG_LEVEL_IMPORTANT);
 		return -1;
 	}
 	

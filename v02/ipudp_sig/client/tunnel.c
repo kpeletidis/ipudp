@@ -33,7 +33,7 @@ tunnel_init(char *dev) {
 	ifr.ifr_addr.sa_family = AF_INET;
 	strncpy(ifr.ifr_name, dev, IFNAMSIZ);
 	if ( ioctl(s, SIOCGIFADDR, &ifr) < 0) {
-		print_log("error: ioctl SIOCGIFADDR error\n");	
+		print_log("error: ioctl SIOCGIFADDR error", LOG_LEVEL_IMPORTANT);	
 		goto free_and_ret;
 	}
 	while(1) {
@@ -63,7 +63,7 @@ tunnel_init(char *dev) {
 	return tun;
 
 bind_err:
-	print_log("couldn't bind tunnel socket\n");
+	print_log("couldn't bind tunnel socket", LOG_LEVEL_IMPORTANT);
 free_and_ret:
 	free(tun);
 	return NULL;
@@ -78,7 +78,7 @@ void tunnel_keep_alive(struct timeval *to, int next_to) {
 
 	list_for_each_entry_safe(t, tt, &c_data.tunnels, list) {
 		if (do_keepalive(t) < 0) {
-			print_log("keepalive failed. closing tunnel...\n");
+			print_log("keepalive failed", LOG_LEVEL_NOTIFICATION);
 			tunnel_close(t);
 		}
 	}
@@ -87,8 +87,9 @@ void tunnel_keep_alive(struct timeval *to, int next_to) {
 }
 
 void tunnel_close(struct tunnel *t) {
+#ifdef DBG
 	if (verbose) printf("closing tunnel %d\n", t->tid);
-
+#endif
 	if (t->tid)
 		ipudp_conf_cmd(IPUDP_CONF_DEL_TUN, t);
 
@@ -103,6 +104,6 @@ void tunnel_close_all(void) {
 	list_for_each_entry_safe(t,tt, &c_data.tunnels, list) {
 		tunnel_close(t);
 	}
-	print_log("all tunnels closed\n");
+	print_log("all tunnels closed", LOG_LEVEL_NOTIFICATION);
 }
 

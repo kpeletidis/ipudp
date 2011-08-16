@@ -68,7 +68,7 @@ console_ini(void) {
 	ret = console_init(0, 1, commands, sizeof (commands) / sizeof (*commands),
 			     exit_handler, "ipudp:$ ");
 	if (ret > 0)
-		print_log("Console sucesfully initialized\n");
+		print_log("console sucesfully initialized", LOG_LEVEL_NOTIFICATION);
 	return ret;
 }
 
