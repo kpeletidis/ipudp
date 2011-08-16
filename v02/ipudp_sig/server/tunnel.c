@@ -63,7 +63,6 @@ void tunnel_check_keepalive(void *a, void *user_ctx /*ignored*/) {
 	struct client *c;
 	struct tunnel *t,*p;
 
-/*
 	gettimeofday(&now, NULL);
 
 	if (verbose) printf("checking keepalive status...\n");
@@ -91,5 +90,4 @@ printf("client %d\n", c->cfd);
 	}
 	
 	if (verbose) printf("done\n");
-*/
 }
