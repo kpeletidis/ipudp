@@ -184,7 +184,7 @@ int main(int argc, char **argv) {
 	if (console)
 		do_select(0, ka_time);
 	else {
-		if (client_association(dev, viface) < 0 ) 
+		if (client_association(dev, viface) < 0) 
 			goto quit;
 		if (background) {
 			if (daemonize() < 0) {

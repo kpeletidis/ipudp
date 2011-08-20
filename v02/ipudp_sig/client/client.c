@@ -68,8 +68,9 @@ retry:
 				if (client_association(c_data.dev, c_data.viface) < 0)
 					goto retry;
 			}
-			else 
+			else {
 				break;
+			}
 		}
 		sleep(to);
 	}
