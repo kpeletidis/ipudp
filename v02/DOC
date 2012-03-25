@@ -1,0 +1,252 @@
+L-VN - Lite Virtual Network
+
+L-VN is a tool for overlay network creation based on IP in UDP encapsulation
+performed in Kernel space without encryption/authentication of the tunneled
+packets.  L-VN consists of 3 main elements:
+
+1) IPUDP encapsulation module: is a kernel module that exports a virtual
+network devices that perform ip-udp encapsulation. Packets routed through this
+network interfaces will be encapsulated in IP/UDP headers and sent to the
+proper tunnel endpoint. 
+
+As to the current status, ipudp module provides 2 virtual devices modes: FIXED
+mode: a single ipudp tunnel is bound to a virtual ipudp device. This type of
+virtual interface is double-stack, in the sense that we can assign both IPv4
+and IPv6 address to the device and use it for both IPv4 and IPv6 applications.
+
+MULTI_V4 mode: multiple ipudp tunnels can be bound to this type of virtual
+interface. For each encapsulated packet, the proper tunnel is chosen by a set
+of rules that bind the destination IP address of the inner packet, with a given
+tunnel.
+
+For GSoC2011 the module has been updated to be compatible with kernel 2.6.38
+and modified in different points to implement the keepalive mechanism.
+
+2) IPUDP configuration tool: this tool can be compiled as both program or
+library and provides a set of primitives based on NETLINK sockets to configure
+the IPUDP encapsulation module. IPUDP_CONF provides the necessary primitives
+for addition/removal of virtual network devices, ipudp tunnels and forwarding
+rules. 
+
+3) IPUDP signaling agents: a client and a server program written in C for
+automatic tunnel establishment and management. In details, these components
+provides the following services: a) mutual authentication based on X509
+certificates and TLS (openssl); b) NAT reflexed address discovery and automatic
+tunnel establishment; c) NAT binding keep alive; d) automatic inactive tunnel
+de-allocation.
+
+This component has been completely implemented for GSoC2011 and it still misses
+some details.
+
+#####################################################################################
+
+HOW TO GET THE CODE
+
+Download the code from the ninux SVN repository:
+# svn co -r 966 https://svn.ninux.org/svn/ninuxdeveloping/ipudp/v02 lvn/
+
+Build and load the module:
+# cd lvn/ipudp_mod
+# make
+# insomd ipudp.ko
+
+Build ipdup configuration program and lib:
+# cd lvn/ipudp_conf
+# make
+
+Build the signaling agents:
+# cd lvn/ipudp_sig/server
+# make
+# cd lvn/ipudp_sig/client
+# make
+
+#####################################################################################
+
+IPUDP SIGNALING AGENTS SMALL GUIDE
+
+# LVN SERVER #
+usage: server -p <local port> -a <local addr> [-u <tun_port>] [-b (background)] 
+	[-v <verbose level>]
+			-p <port>: TCP server port
+			-a <address>: server IP address
+			-u <tunnel_port>: UDP server tunneling port - optional
+			-b: daemonize the program
+			-v: set verbose mode - debug
+
+es: lvn_server -p 9000 -a 100.0.0.1 -v
+
+
+# LVN CLIENT #
+usage: client -p <port> -a <server address> [-u <tunnel_port>] [-c (console)]
+		[-i <dev>] [-n <viface_name>] [-k <sec>] [-b (background)] [-P (persistent)] 
+		[-v (verbose)]
+			-p <port>: TCP server port
+			-a <address>: server IP address
+			-u <tunnel_port>: UDP server tunneling port - optional
+			-c: starts interactive console mode. Press TAB for command list
+			-i <dev>: set the local outgoing tunnel interface. Ignored in console mode. 
+				Mandatory otherwise
+			-n <viface_name>: set the virtual interface name. Ignored in console mode
+			-k <sec>: set keepalive time in seconds
+			-b: daemonize the program
+			-P: set persistent mode. If "tunnel connectivity" is lost, a new tunnel 
+				is automatically established
+			-v: set verbose mode - debug
+		
+es: 1) interactive console mode: lvn_client -p 9000 -a 100.0.0.1 -c
+	2) background mode: lvn_client -p 9000 -a 100.0.0.1 -i eth0 -n ipudp0 -b
+
+#####################################################################################
+
+IPUDP_CONF SMALL GUIDE:
+
+usage: 
+ipudp_conf -cmd_arg <cmd_opt>
+Possible cmd_arg: ADD (-a) DEL (-d) LIST (-l)\n"
+Possible cmd_opt: args: dev, tun, rule
+
+With ipudp_conf it is possible to: add, remove and list the set of IPUDP
+virtual interfaces, the tunnels and the rules registered in the module.
+
+In details:
+
+(1) Add a virtual ipudp device:
+	ipudp_conf -a dev -N <name> -M <mode> -P <v4|v6>
+
+Possible [non mandatory] options:
+-N <name>: 	set the name of the virtual device.
+			if -N is missing, the default name is ipudp#n where #n is the
+			first available index starting from 0
+
+-M <mode>: 	set the virtual device mode (default "fixed").
+			Another possible value is multi_v4 (to be extended).
+			The idea is to have different encapsulation mode and forwarding policies
+
+			FIXED mode: a single ip/udp tunnel is bound to a given device.
+
+			MULTI_V4: more then one ip/udp tunnel can be bound to a device. 
+			The tunnel for a given packet is chosen from a set of rules that binds 
+			the tunnel to a destination ipv4 address.. (only for IPv4 traffic)
+
+-P <v4|v6>: set the ip version of the outer header. Can be either v4 or v6.
+
+
+(2) Delete a virtual ipudp device:
+		ipudp_conf -d dev -N <dev_name>
+
+-N <name>: 	set the name of the virtual device to remove.
+
+
+(3) Add a ipdup tunnel to a virtual device
+	ipudp_conf -a tun -N <name> -P <v4|v6> -D <ipdst> -S <ipsrc> \
+						-L <local> -R <remote> -U <dev>
+
+-N <name>:	set the name of the virtual interface on which to bind a tunnel.
+
+-P <v4|v6>:	set the ip version for the tunnel (that has to be same as the one the
+			ipudp virtual device the tunnel is bound to)
+
+-D <ipdst>:	set the IP address the remote tunnel end point. The ip version is 
+			expected to be the one specified with -P option.
+
+-S <ipsrc>:	set the IP address the local tunnel end point. The ip version is 
+			expected to be the one specified with -P option. This option can be 
+			omitted when -U is used.
+
+
+-U <dev>:	set the network device used to send IP/UDP encapsulated packets. When 
+			this option is used, the IP source address of the tunnel is chosen 
+			accordingly to the IP configuration of the underlying network device.
+
+-L <port>:	set the local UDP port for the tunnel.
+
+-R <port>:	set the remote UDP port for the tunnel.
+
+
+note: 	(1) when a tunnel is added a unique identifier is associated to the tunnel.
+		Use this "tid" (option -I) to delete a tunnel (see later..)
+	
+(4) Delete a tunnel
+	ipudp_conf -d tun -N <viface_name> -I <tid>
+	
+-N <name>:	set the name of the virtual interface from which to delete a tunnel.
+-I <tid>:	set the unique tunnel id of the tunnel to delete.
+
+(5) Add rule to a ipudp MULTI_V4 device:
+	ipudp_conf -a rule -N <name> -M multi_v4 -D <ipdst> -I <tid>
+
+	-N <name>:	set the name of the virtual interface to which to add a rule.
+
+	-M <mode>:	specify the virtual interface mode, and thus the format of the rule.
+				In this case is set to multi_v4.
+
+	-D <ipdst>: indicates to match the packets to be encapsulated if the IPv4 
+				destination address is equal to <ipdest>.
+
+	-I <tid>:	the tunnel id of the  tunnel targeted by the rule.
+
+(6) List ipudp devices;
+	ipudp_conf -L dev
+
+(7) List ipudp tunnel for a given device;
+	ipudp_conf -L tun -N <dev_name>
+
+#####################################################################################
+
+TEST - OVERLAY NETWORK CREATION
+
+In this test we want to create an overlay network scenario with 1 hub and 2 spokes
+behind NAT. The overlay network will have IP address 10.0.0.0/24. The topology will be
+automatically build by the IPUDP signaling agents.
+
+For this test I have used virtual BOX. The 2 spokes are behind NAT. The hub is
+bridged on my home network with address 10.71.45.3.
+
+#####################
+# PRELIMINARIES     #
+# OPENSSL SSL stuff #
+#####################
+
+For both clients and servers, the following files need to be in the folder "certs".
+The files required by the clients are:
+client/certs/user.key: private key
+client/certs/user.pem: X509 certificate
+client/certs/dh.pem: diffie-hellman parameters
+
+The files required by the server are:
+server/certs/server.key: server private key
+server/certs/server.pem: server certificate
+server/certs/dh.pem: server diffie-hellman parameters
+
+In addition, for both clients and server, the CA certificate must be copied in "certs/".
+
+In the SVN repository the client and the server already have the required
+certificates in certs/ directory for testing.
+
+
+HUB
+#enable ip forwarding, if not already done
+echo 1 > /proc/sys/net/ipv4/ip_forward 
+
+#if you want, you can also disable forwarding for non encapsulated packets.
+#iptables -A FORWARD !-i ipudp0 -j DROP
+
+#suppress ICMP redirects
+echo 0 > /proc/sys/net/ipv4/conf/ipudp0/send_redirects
+
+#run the server (remember to build and load the ipudp module, and to build ipudp_conf lib)
+cd ipudp/v02/ipudp_sig/server/
+sudo ./server -p 9999 -a 10.71.45.3 -v
+
+SPOKE1 - it will receive virtual IP 10.100.0.2
+cd ipudp/v02/ipudp_sig/client/
+sudo ./client -p 9999 -a 10.71.45.3 -i eth0 -n ipudp0 -v
+
+SPOKE2 - it will receive virtual IP 10.100.0.3
+sudo ./client -p 9999 -a 10.71.45.3 -i eth0 -n ipudp0 -v
+
+Test the network:
+On SPOKE1: nc -l -u 10.100.0.2 7000
+On SPOKE2: nc 10.100.0.2 7000
+
+Write something..
